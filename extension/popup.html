@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>VaultGuard</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        background: #0f1115;
+        color: #e8e8ea;
+        width: 280px;
+        padding: 14px;
+      }
+      h1 {
+        font-size: 1rem;
+        margin: 0 0 10px;
+      }
+      button {
+        width: 100%;
+        padding: 8px 10px;
+        margin-top: 8px;
+        background: #5b8cff;
+        color: #0f1115;
+        border: 0;
+        border-radius: 6px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button.ghost {
+        background: transparent;
+        color: #a0a4ad;
+        border: 1px solid #2c313c;
+      }
+      .status {
+        font-size: 0.85rem;
+        color: #a0a4ad;
+        margin: 6px 0;
+      }
+      .err {
+        color: #ff6b6b;
+      }
+      .ok {
+        color: #7dd3fc;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>VaultGuard</h1>
+    <p id="status" class="status">Checking…</p>
+    <button id="pair">Pair with desktop app</button>
+    <button id="unpair" class="ghost">Forget pairing</button>
+    <script src="popup.js"></script>
+  </body>
+</html>

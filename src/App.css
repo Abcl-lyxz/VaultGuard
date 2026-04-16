@@ -1,0 +1,232 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, system-ui, -apple-system, Segoe UI, sans-serif;
+  font-size: 16px;
+}
+
+body {
+  margin: 0;
+  background: #0f1115;
+  color: #e8e8ea;
+}
+
+.screen {
+  max-width: 420px;
+  margin: 8vh auto;
+  padding: 2rem;
+  background: #181b21;
+  border: 1px solid #262a33;
+  border-radius: 12px;
+}
+
+.screen h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.75rem;
+  letter-spacing: 0.02em;
+}
+
+.subtitle {
+  color: #a0a4ad;
+  margin: 0 0 1.5rem;
+  font-size: 0.95rem;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+input {
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid #2c313c;
+  background: #0f1115;
+  color: #e8e8ea;
+  font-size: 1rem;
+  font-family: inherit;
+}
+
+input:focus {
+  outline: none;
+  border-color: #5b8cff;
+}
+
+button {
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 0;
+  background: #5b8cff;
+  color: #0f1115;
+  font-weight: 600;
+  font-size: 1rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.error {
+  color: #ff6b6b;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+/* Vault layout */
+.vault {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  height: 100vh;
+}
+.sidebar {
+  background: #13161c;
+  border-right: 1px solid #262a33;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  gap: 0.5rem;
+  overflow: hidden;
+}
+.sidebar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.sidebar-head h2 { margin: 0; font-size: 1.1rem; }
+.search { width: 100%; box-sizing: border-box; }
+.new-btn { background: #30343d; color: #e8e8ea; }
+.list { overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 0.75rem; }
+.group-head {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #7f848f;
+  padding: 0 0.25rem 0.25rem;
+}
+.row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  text-align: left;
+  background: transparent;
+  color: #e8e8ea;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  font-weight: 400;
+  font-size: 0.95rem;
+}
+.row:hover { background: #1c2028; }
+.row.active { background: #26324d; }
+.star { color: #ffd666; }
+.empty { color: #7f848f; text-align: center; padding: 2rem 0; }
+
+.main {
+  padding: 1.5rem 2rem;
+  overflow-y: auto;
+  background: #0f1115;
+}
+
+.editor { display: flex; flex-direction: column; gap: 1rem; max-width: 640px; }
+.editor.empty { justify-content: center; align-items: center; height: 60vh; color: #7f848f; }
+.editor-head { display: flex; gap: 0.5rem; align-items: center; }
+.name-input { flex: 1; font-size: 1.1rem; font-weight: 500; }
+.fav { display: flex; align-items: center; gap: 0.25rem; color: #ffd666; cursor: pointer; user-select: none; }
+
+.field { display: flex; flex-direction: column; gap: 0.25rem; }
+.field > span { color: #a0a4ad; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.field textarea, .field select, .field input {
+  padding: 0.6rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #2c313c;
+  background: #181b21;
+  color: #e8e8ea;
+  font: inherit;
+}
+.field textarea { font-family: ui-monospace, Menlo, monospace; font-size: 0.9rem; resize: vertical; }
+
+.secret-row { display: flex; gap: 0.25rem; }
+.secret-row input { flex: 1; }
+
+.ghost { background: transparent; color: #a0a4ad; border: 1px solid #2c313c; }
+.ghost:hover { color: #e8e8ea; }
+.small { padding: 0.35rem 0.6rem; font-size: 0.85rem; }
+.danger { background: #3b1f22; color: #ff8888; }
+
+.row-2 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+
+.editor-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.5rem; }
+
+/* Modal */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 10;
+}
+.modal {
+  background: #181b21;
+  border: 1px solid #2c313c;
+  border-radius: 12px;
+  padding: 1.5rem;
+  width: 420px;
+  max-width: 95vw;
+  display: flex; flex-direction: column; gap: 0.85rem;
+}
+.modal h2 { margin: 0; font-size: 1.2rem; }
+.gen-value {
+  display: flex; gap: 0.5rem; align-items: center;
+  background: #0f1115; padding: 0.75rem; border-radius: 8px;
+}
+.gen-value code { flex: 1; font-size: 1rem; word-break: break-all; }
+.gen-checks { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.4rem; font-size: 0.9rem; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+
+/* TOTP badge */
+.totp { display: flex; align-items: center; gap: 0.75rem; }
+.totp-code {
+  background: #0f1115; color: #7dd3fc;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 1.4rem;
+  letter-spacing: 0.15em;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: 1px solid #2c313c;
+  cursor: pointer;
+}
+.totp-bar { flex: 1; height: 4px; background: #2c313c; border-radius: 2px; overflow: hidden; }
+.totp-bar-fill { height: 100%; background: #7dd3fc; transition: width 1s linear; }
+.totp-remaining { color: #a0a4ad; font-size: 0.85rem; width: 2.5rem; text-align: right; }
+.totp-err { color: #ff6b6b; font-size: 0.85rem; }
+
+/* Folders */
+.folders { display: flex; flex-direction: column; gap: 0.25rem; padding-top: 0.5rem; }
+.folder-head {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em;
+  color: #7f848f; padding: 0 0.25rem;
+}
+.folder-pill {
+  flex: 1; text-align: left;
+  background: transparent; color: #c7cbd3;
+  padding: 0.4rem 0.75rem; border-radius: 6px;
+  font-weight: 400; font-size: 0.9rem;
+  border: 1px solid transparent;
+}
+.folder-pill:hover { background: #1c2028; }
+.folder-pill.active { background: #26324d; color: #e8e8ea; }
+.folder-row { display: flex; align-items: center; gap: 0.25rem; }
+.folder-row .small { padding: 0.25rem 0.4rem; font-size: 0.75rem; }
+
+.head-actions { display: flex; gap: 0.25rem; }
+
+.settings-menu { display: flex; flex-direction: column; gap: 0.5rem; }
+.settings-panel { display: flex; flex-direction: column; gap: 0.75rem; }
+.success { color: #7dd3fc; font-size: 0.9rem; word-break: break-all; }
+.import-report {
+  background: #0f1115; border: 1px solid #2c313c; border-radius: 8px;
+  padding: 0.75rem 1rem; font-size: 0.9rem;
+}
+.import-report p { margin: 0.15rem 0; }
