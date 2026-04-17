@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Search, Star, X } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "../lib/ipc";
 import type { ItemSummary } from "../lib/schemas";
 import { fuzzyScore } from "../lib/fuzzy";
 
 export function AutofillPicker() {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen]   = useState(false);
   const [items, setItems] = useState<ItemSummary[]>([]);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -26,9 +27,7 @@ export function AutofillPicker() {
         setOpen(true);
       }
     }).then((u) => (unlisten = u));
-    return () => {
-      if (unlisten) unlisten();
-    };
+    return () => { if (unlisten) unlisten(); };
   }, []);
 
   const visible = useMemo(() => {
@@ -59,35 +58,67 @@ export function AutofillPicker() {
   }
 
   if (!open) return null;
+
   return (
     <div className="modal-backdrop" onClick={() => setOpen(false)}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Quick autofill</h2>
-        <p className="subtitle">
-          Focus a password field in any app, then choose a login. The username +
-          password will be typed into the focused control via UI Automation.
+        <div className="modal-header">
+          <span className="modal-title">Quick autofill</span>
+          <button className="btn-icon" onClick={() => setOpen(false)}>
+            <X size={16} />
+          </button>
+        </div>
+        <p className="modal-subtitle">
+          Focus a password field in any app, then choose a login. Credentials will be
+          typed via UI Automation.
         </p>
-        <input
-          ref={inputRef}
-          className="search"
-          placeholder="Search logins…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={onKey}
-        />
-        <div className="list" style={{ maxHeight: 320 }}>
+
+        <div style={{ position: "relative" }}>
+          <Search
+            size={13}
+            style={{
+              position: "absolute",
+              left: 10,
+              top: "50%",
+              transform: "translateY(-50%)",
+              color: "var(--text-muted)",
+              pointerEvents: "none",
+            }}
+          />
+          <input
+            ref={inputRef}
+            className="search"
+            placeholder="Search logins…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={onKey}
+            style={{ paddingLeft: 30 }}
+          />
+        </div>
+
+        <div style={{ maxHeight: 300, overflowY: "auto", display: "flex", flexDirection: "column", gap: 1 }}>
           {visible.length === 0 ? (
-            <p className="empty">No logins.</p>
+            <p style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", padding: "var(--sp-3) var(--sp-2)" }}>
+              No logins found.
+            </p>
           ) : (
             visible.map((i) => (
-              <button key={i.id} className="row" onClick={() => pick(i.id)}>
-                {i.favorite && <span className="star">★</span>}
-                <span>{i.name}</span>
+              <button
+                key={i.id}
+                className="item-row"
+                onClick={() => pick(i.id)}
+              >
+                <span className="item-row-name">{i.name}</span>
+                {i.favorite && (
+                  <Star size={10} className="item-row-fav" fill="var(--yellow)" />
+                )}
               </button>
             ))
           )}
         </div>
+
         {error && <p className="error">{error}</p>}
+
         <div className="modal-actions">
           <button className="ghost" onClick={() => setOpen(false)}>Close</button>
         </div>

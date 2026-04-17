@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ShieldCheck } from "lucide-react";
 import { api, type CmdError } from "./lib/ipc";
 import { VaultView } from "./components/VaultView";
 import "./App.css";
@@ -68,7 +69,17 @@ function App() {
   }
 
   if (mode === "loading") {
-    return <div className="screen"><p>Loading…</p></div>;
+    return (
+      <div className="auth-screen">
+        <div className="auth-card">
+          <div className="auth-logo">
+            <ShieldCheck size={28} className="auth-logo-icon" />
+            <span className="auth-logo-text">VaultGuard</span>
+          </div>
+          <p className="auth-subtitle">Loading…</p>
+        </div>
+      </div>
+    );
   }
 
   if (mode === "unlocked") {
@@ -76,36 +87,47 @@ function App() {
   }
 
   return (
-    <div className="screen">
-      <h1>VaultGuard</h1>
-      <p className="subtitle">
-        {mode === "create"
-          ? "Set a master password to create your vault."
-          : "Enter your master password to unlock."}
-      </p>
-      <form onSubmit={mode === "create" ? onCreate : onUnlock}>
-        <input
-          type="password"
-          placeholder="Master password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoFocus
-          disabled={busy}
-        />
-        {mode === "create" && (
-          <input
-            type="password"
-            placeholder="Confirm master password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            disabled={busy}
-          />
-        )}
-        <button type="submit" disabled={busy || !password}>
-          {busy ? "Working…" : mode === "create" ? "Create vault" : "Unlock"}
-        </button>
-      </form>
-      {error && <p className="error">{error}</p>}
+    <div className="auth-screen">
+      <div className="auth-card">
+        <div className="auth-logo">
+          <ShieldCheck size={28} className="auth-logo-icon" />
+          <span className="auth-logo-text">VaultGuard</span>
+        </div>
+        <p className="auth-subtitle">
+          {mode === "create"
+            ? "Set a master password to create your encrypted vault."
+            : "Enter your master password to unlock your vault."}
+        </p>
+        <form className="auth-form" onSubmit={mode === "create" ? onCreate : onUnlock}>
+          <div className="field">
+            <span>Master password</span>
+            <input
+              type="password"
+              placeholder="Enter master password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoFocus
+              disabled={busy}
+            />
+          </div>
+          {mode === "create" && (
+            <div className="field">
+              <span>Confirm password</span>
+              <input
+                type="password"
+                placeholder="Confirm master password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                disabled={busy}
+              />
+            </div>
+          )}
+          {error && <p className="error">{error}</p>}
+          <button className="btn-primary" type="submit" disabled={busy || !password}>
+            {busy ? "Working…" : mode === "create" ? "Create vault" : "Unlock"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

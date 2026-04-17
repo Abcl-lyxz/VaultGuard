@@ -1,11 +1,9 @@
 import { useState } from "react";
+import { Download, Upload, X } from "lucide-react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { api, type ImportReport, type ImportStrategy } from "../lib/ipc";
 
-type Props = {
-  onClose: () => void;
-};
-
+type Props = { onClose: () => void };
 type Mode = "menu" | "export" | "import";
 
 export function SettingsModal({ onClose }: Props) {
@@ -14,16 +12,30 @@ export function SettingsModal({ onClose }: Props) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Settings</h2>
+        <div className="modal-header">
+          <span className="modal-title">Settings</span>
+          <button className="btn-icon" onClick={onClose}><X size={16} /></button>
+        </div>
+
         {mode === "menu" && (
           <div className="settings-menu">
-            <button onClick={() => setMode("export")}>Export encrypted backup…</button>
-            <button onClick={() => setMode("import")}>Import backup…</button>
-            <div className="modal-actions">
-              <button className="ghost" onClick={onClose}>Close</button>
-            </div>
+            <button
+              className="settings-menu-btn"
+              onClick={() => setMode("export")}
+            >
+              <Download size={18} className="settings-menu-btn-icon" />
+              Export encrypted backup…
+            </button>
+            <button
+              className="settings-menu-btn"
+              onClick={() => setMode("import")}
+            >
+              <Upload size={18} className="settings-menu-btn-icon" />
+              Import backup…
+            </button>
           </div>
         )}
+
         {mode === "export" && <ExportPanel onDone={onClose} onBack={() => setMode("menu")} />}
         {mode === "import" && <ImportPanel onDone={onClose} onBack={() => setMode("menu")} />}
       </div>
@@ -33,10 +45,10 @@ export function SettingsModal({ onClose }: Props) {
 
 function ExportPanel({ onDone, onBack }: { onDone: () => void; onBack: () => void }) {
   const [passphrase, setPassphrase] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [confirm, setConfirm]       = useState("");
+  const [busy, setBusy]             = useState(false);
+  const [error, setError]           = useState<string | null>(null);
+  const [success, setSuccess]       = useState<string | null>(null);
 
   async function run() {
     setError(null);
@@ -69,11 +81,11 @@ function ExportPanel({ onDone, onBack }: { onDone: () => void; onBack: () => voi
 
   return (
     <div className="settings-panel">
-      <p className="subtitle">
-        The backup file is encrypted with Argon2id + XChaCha20-Poly1305. Your master
-        password is <b>not</b> used — set a separate passphrase for this backup.
+      <p className="modal-subtitle">
+        Encrypted with Argon2id + XChaCha20-Poly1305. Your master password is{" "}
+        <strong>not</strong> used — set a separate passphrase for this backup.
       </p>
-      <label className="field">
+      <div className="field">
         <span>Backup passphrase</span>
         <input
           type="password"
@@ -81,11 +93,15 @@ function ExportPanel({ onDone, onBack }: { onDone: () => void; onBack: () => voi
           onChange={(e) => setPassphrase(e.target.value)}
           autoFocus
         />
-      </label>
-      <label className="field">
+      </div>
+      <div className="field">
         <span>Confirm passphrase</span>
-        <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-      </label>
+        <input
+          type="password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+        />
+      </div>
       {error && <p className="error">{error}</p>}
       {success && <p className="success">{success}</p>}
       <div className="modal-actions">
@@ -104,10 +120,10 @@ function ExportPanel({ onDone, onBack }: { onDone: () => void; onBack: () => voi
 
 function ImportPanel({ onDone, onBack }: { onDone: () => void; onBack: () => void }) {
   const [passphrase, setPassphrase] = useState("");
-  const [strategy, setStrategy] = useState<ImportStrategy>("skip");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [report, setReport] = useState<ImportReport | null>(null);
+  const [strategy, setStrategy]     = useState<ImportStrategy>("skip");
+  const [busy, setBusy]             = useState(false);
+  const [error, setError]           = useState<string | null>(null);
+  const [report, setReport]         = useState<ImportReport | null>(null);
 
   async function run() {
     setError(null);
@@ -131,10 +147,10 @@ function ImportPanel({ onDone, onBack }: { onDone: () => void; onBack: () => voi
 
   return (
     <div className="settings-panel">
-      <p className="subtitle">
+      <p className="modal-subtitle">
         Import items from a previously-exported <code>.vgx</code> file.
       </p>
-      <label className="field">
+      <div className="field">
         <span>Backup passphrase</span>
         <input
           type="password"
@@ -142,15 +158,15 @@ function ImportPanel({ onDone, onBack }: { onDone: () => void; onBack: () => voi
           onChange={(e) => setPassphrase(e.target.value)}
           autoFocus
         />
-      </label>
-      <label className="field">
+      </div>
+      <div className="field">
         <span>On duplicate IDs</span>
         <select value={strategy} onChange={(e) => setStrategy(e.target.value as ImportStrategy)}>
           <option value="skip">Skip — keep existing (safest)</option>
           <option value="overwrite">Overwrite — replace existing</option>
           <option value="keep_both">Keep both — import as new copies</option>
         </select>
-      </label>
+      </div>
       {error && <p className="error">{error}</p>}
       {report && (
         <div className="import-report">

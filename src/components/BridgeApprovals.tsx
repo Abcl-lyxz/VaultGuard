@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
+import { X } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { api, type CredsRequest, type PairRequest } from "../lib/ipc";
 
 export function BridgeApprovals() {
-  const [pair, setPair] = useState<PairRequest | null>(null);
-  const [creds, setCreds] = useState<CredsRequest | null>(null);
+  const [pair, setPair]       = useState<PairRequest | null>(null);
+  const [creds, setCreds]     = useState<CredsRequest | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
 
   useEffect(() => {
@@ -16,28 +17,19 @@ export function BridgeApprovals() {
       setCreds(e.payload);
       setSelected(e.payload.candidates[0]?.id ?? null);
     }).then((u) => unlistens.push(u));
-    return () => {
-      for (const u of unlistens) u();
-    };
+    return () => { for (const u of unlistens) u(); };
   }, []);
 
   async function decidePair(allow: boolean) {
     if (!pair) return;
-    try {
-      await api.bridgePairComplete(pair.request_id, allow);
-    } finally {
-      setPair(null);
-    }
+    try { await api.bridgePairComplete(pair.request_id, allow); }
+    finally { setPair(null); }
   }
 
   async function decideCreds(allow: boolean) {
     if (!creds) return;
-    try {
-      await api.bridgeCredsComplete(creds.request_id, allow, allow ? selected : null);
-    } finally {
-      setCreds(null);
-      setSelected(null);
-    }
+    try { await api.bridgeCredsComplete(creds.request_id, allow, allow ? selected : null); }
+    finally { setCreds(null); setSelected(null); }
   }
 
   return (
@@ -45,10 +37,16 @@ export function BridgeApprovals() {
       {pair && (
         <div className="modal-backdrop">
           <div className="modal">
-            <h2>Pair browser extension?</h2>
-            <p className="subtitle">
-              <b>{pair.extension_name}</b> wants to connect to VaultGuard. Once paired
-              it can request credentials, and you will be asked to approve each request.
+            <div className="modal-header">
+              <span className="modal-title">Pair browser extension?</span>
+              <button className="btn-icon" onClick={() => decidePair(false)}>
+                <X size={16} />
+              </button>
+            </div>
+            <p className="modal-subtitle">
+              <strong style={{ color: "var(--text-primary)" }}>{pair.extension_name}</strong>{" "}
+              wants to connect to VaultGuard. Once paired it can request credentials,
+              and you will be asked to approve each request.
             </p>
             <div className="modal-actions">
               <button className="ghost" onClick={() => decidePair(false)}>Deny</button>
@@ -57,29 +55,38 @@ export function BridgeApprovals() {
           </div>
         </div>
       )}
+
       {creds && (
         <div className="modal-backdrop">
           <div className="modal">
-            <h2>Send credentials?</h2>
-            <p className="subtitle">
-              The browser is requesting a login for <b>{creds.origin}</b>.
+            <div className="modal-header">
+              <span className="modal-title">Send credentials?</span>
+              <button className="btn-icon" onClick={() => decideCreds(false)}>
+                <X size={16} />
+              </button>
+            </div>
+            <p className="modal-subtitle">
+              The browser is requesting a login for{" "}
+              <strong style={{ color: "var(--text-primary)" }}>{creds.origin}</strong>.
             </p>
             {creds.candidates.length === 0 ? (
-              <p className="empty">No matching items.</p>
+              <p style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
+                No matching items.
+              </p>
             ) : (
-              <div className="settings-menu">
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 {creds.candidates.map((c) => (
-                  <label key={c.id} className="row" style={{ cursor: "pointer" }}>
+                  <label key={c.id} className="creds-candidate">
                     <input
                       type="radio"
                       name="cred"
                       checked={selected === c.id}
                       onChange={() => setSelected(c.id)}
-                      style={{ marginRight: 8 }}
+                      style={{ accentColor: "var(--accent)", flexShrink: 0 }}
                     />
-                    <span style={{ flex: 1 }}>
-                      <div>{c.name}</div>
-                      <div style={{ color: "#a0a4ad", fontSize: "0.85rem" }}>
+                    <span className="creds-candidate-info">
+                      <div className="creds-candidate-name">{c.name}</div>
+                      <div className="creds-candidate-meta">
                         {c.username} · {c.url}
                       </div>
                     </span>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { RefreshCw, X } from "lucide-react";
 import { api, type GenOptions } from "../lib/ipc";
 
 type Props = {
@@ -16,7 +17,7 @@ const DEFAULTS: GenOptions = {
 };
 
 export function PasswordGenerator({ onUse, onClose }: Props) {
-  const [opts, setOpts] = useState<GenOptions>(DEFAULTS);
+  const [opts, setOpts]   = useState<GenOptions>(DEFAULTS);
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -43,13 +44,23 @@ export function PasswordGenerator({ onUse, onClose }: Props) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Password generator</h2>
+        <div className="modal-header">
+          <span className="modal-title">Password generator</span>
+          <button className="btn-icon" onClick={onClose}><X size={16} /></button>
+        </div>
+
         <div className="gen-value">
           <code>{value}</code>
-          <button type="button" onClick={() => regen()}>↻</button>
+          <button type="button" className="btn-icon" onClick={() => regen()} title="Regenerate">
+            <RefreshCw size={15} />
+          </button>
         </div>
-        <label>
-          Length: {opts.length}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-1)" }}>
+          <div className="gen-length">
+            <span>Length</span>
+            <span className="gen-length-val">{opts.length}</span>
+          </div>
           <input
             type="range"
             min={8}
@@ -57,18 +68,38 @@ export function PasswordGenerator({ onUse, onClose }: Props) {
             value={opts.length}
             onChange={(e) => patch({ length: Number(e.target.value) })}
           />
-        </label>
-        <div className="gen-checks">
-          <label><input type="checkbox" checked={opts.lower} onChange={(e) => patch({ lower: e.target.checked })} /> a–z</label>
-          <label><input type="checkbox" checked={opts.upper} onChange={(e) => patch({ upper: e.target.checked })} /> A–Z</label>
-          <label><input type="checkbox" checked={opts.digits} onChange={(e) => patch({ digits: e.target.checked })} /> 0–9</label>
-          <label><input type="checkbox" checked={opts.symbols} onChange={(e) => patch({ symbols: e.target.checked })} /> !@#$</label>
-          <label><input type="checkbox" checked={opts.exclude_ambiguous} onChange={(e) => patch({ exclude_ambiguous: e.target.checked })} /> no O/0/l/1</label>
         </div>
+
+        <div className="gen-checks">
+          <label className="gen-check">
+            <input type="checkbox" checked={opts.lower} onChange={(e) => patch({ lower: e.target.checked })} />
+            a–z lowercase
+          </label>
+          <label className="gen-check">
+            <input type="checkbox" checked={opts.upper} onChange={(e) => patch({ upper: e.target.checked })} />
+            A–Z uppercase
+          </label>
+          <label className="gen-check">
+            <input type="checkbox" checked={opts.digits} onChange={(e) => patch({ digits: e.target.checked })} />
+            0–9 digits
+          </label>
+          <label className="gen-check">
+            <input type="checkbox" checked={opts.symbols} onChange={(e) => patch({ symbols: e.target.checked })} />
+            !@#$ symbols
+          </label>
+          <label className="gen-check" style={{ gridColumn: "1 / -1" }}>
+            <input type="checkbox" checked={opts.exclude_ambiguous} onChange={(e) => patch({ exclude_ambiguous: e.target.checked })} />
+            Exclude ambiguous (O, 0, l, 1)
+          </label>
+        </div>
+
         {error && <p className="error">{error}</p>}
+
         <div className="modal-actions">
           <button type="button" className="ghost" onClick={onClose}>Cancel</button>
-          <button type="button" onClick={() => { onUse(value); onClose(); }}>Use this</button>
+          <button type="button" onClick={() => { onUse(value); onClose(); }}>
+            Use this password
+          </button>
         </div>
       </div>
     </div>
