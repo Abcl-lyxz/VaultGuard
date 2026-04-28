@@ -1,6 +1,6 @@
 [package]
 name = "vaultguard"
-version = "0.1.0"
+version = "0.3.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -43,10 +43,12 @@ tauri-plugin-dialog = "2.7.0"
 tiny_http = "0.12.0"
 tokio = { version = "1.52.0", features = ["sync", "rt", "macros", "time", "rt-multi-thread"] }
 url = "2.5.8"
+psl = "0.5"
 
 [target.'cfg(windows)'.dependencies]
 global-hotkey = "0.7"
 uiautomation = "0.20"
+windows = { version = "0.58", features = ["Win32_UI_WindowsAndMessaging"] }
 
 # Release profile — size + speed + hardening.
 # - LTO removes dead code (smaller binary, fewer crypto leftovers in memory image).

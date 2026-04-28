@@ -25,7 +25,7 @@ pub mod hotkey {
 
 #[cfg(not(windows))]
 pub mod uia {
-    pub fn fill_focused(_username: Option<&str>, _password: &str) -> Result<(), String> {
+    pub fn fill_focused(_username: Option<&str>, _password: &str, _target_hwnd: u64) -> Result<(), String> {
         Err("autofill is Windows-only".into())
     }
 }

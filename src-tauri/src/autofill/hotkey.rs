@@ -6,6 +6,7 @@ use global_hotkey::{
     GlobalHotKeyEvent, GlobalHotKeyManager,
 };
 use tauri::{AppHandle, Emitter};
+use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
 
 static STARTED: AtomicBool = AtomicBool::new(false);
 
@@ -38,7 +39,12 @@ pub fn start(app: AppHandle) -> Result<(), String> {
             loop {
                 match rx.recv_timeout(Duration::from_millis(500)) {
                     Ok(_ev) => {
-                        let _ = app.emit("autofill:open_picker", ());
+                        // Capture the currently focused window HWND so the
+                        // fill command can restore focus before querying UIA.
+                        let hwnd_val: u64 = unsafe {
+                            GetForegroundWindow().0 as u64
+                        };
+                        let _ = app.emit("autofill:open_picker", hwnd_val);
                     }
                     Err(e) => {
                         // Disconnected = exit; timeout = keep waiting.

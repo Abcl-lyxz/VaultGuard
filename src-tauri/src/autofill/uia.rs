@@ -1,19 +1,32 @@
 //! Windows UI Automation autofill.
 //!
-//! Strategy: take the focused element. If it accepts the `Value` pattern, set
-//! it to the password. Then, via the control-view tree walker, climb to the
-//! parent and walk previous siblings looking for the closest non-password
-//! element that also accepts `Value` — that becomes the username target.
+//! Strategy: restore focus to the target window, then take the focused element.
+//! If it accepts the `Value` pattern, set it to the password. Then, via the
+//! control-view tree walker, climb to the parent and walk previous siblings
+//! looking for the closest non-password element that also accepts `Value` —
+//! that becomes the username target.
 //!
 //! When ValuePattern is unavailable (some custom controls), fall back to the
 //! clipboard helper so the user can paste manually.
 
 use uiautomation::patterns::UIValuePattern;
 use uiautomation::{UIAutomation, UIElement, UITreeWalker};
+use windows::Win32::Foundation::HWND;
+use windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
 
 use crate::clipboard;
 
-pub fn fill_focused(username: Option<&str>, password: &str) -> Result<(), String> {
+pub fn fill_focused(username: Option<&str>, password: &str, target_hwnd: u64) -> Result<(), String> {
+    // Restore focus to the window that was focused when the hotkey was pressed,
+    // before the autofill picker overlay stole it.
+    if target_hwnd != 0 {
+        unsafe {
+            let _ = SetForegroundWindow(HWND(target_hwnd as *mut core::ffi::c_void));
+        }
+        // Give the OS time to switch foreground window before querying focus.
+        std::thread::sleep(std::time::Duration::from_millis(80));
+    }
+
     let auto = UIAutomation::new().map_err(|e| e.to_string())?;
     let focused = auto.get_focused_element().map_err(|e| e.to_string())?;
 

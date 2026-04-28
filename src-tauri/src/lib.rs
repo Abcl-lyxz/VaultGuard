@@ -5,6 +5,7 @@ pub mod crypto;
 pub mod export;
 pub mod generator;
 pub mod ipc;
+pub mod prefs;
 pub mod totp;
 pub mod vault;
 
@@ -52,6 +53,8 @@ pub fn run() {
             ipc::bridge_pair_complete,
             ipc::bridge_creds_complete,
             ipc::autofill_fill,
+            ipc::prefs_get,
+            ipc::prefs_set,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

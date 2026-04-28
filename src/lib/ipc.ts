@@ -49,6 +49,15 @@ export type Folder = {
   created_at: number;
 };
 
+export type Prefs = {
+  theme: "light" | "dark" | "system";
+  idle_minutes: number;
+  lock_on_blur: boolean;
+  clipboard_ttl_secs: number;
+  autofill_enabled: boolean;
+  autofill_hotkey: string;
+};
+
 export const api = {
   vaultExists: () => invoke<boolean>("vault_exists"),
   vaultCreate: (password: string) => invoke<void>("vault_create", { password }),
@@ -80,8 +89,8 @@ export const api = {
   vaultImport: (path: string, passphrase: string, strategy: ImportStrategy) =>
     invoke<ImportReport>("vault_import", { path, passphrase, strategy }),
 
-  autofillFill: (itemId: string) =>
-    invoke<void>("autofill_fill", { itemId }),
+  autofillFill: (itemId: string, targetHwnd = 0) =>
+    invoke<void>("autofill_fill", { itemId, targetHwnd }),
 
   bridgePairComplete: (id: string, allow: boolean) =>
     invoke<void>("bridge_pair_complete", { id, allow }),
@@ -90,11 +99,10 @@ export const api = {
     allow: boolean,
     selectedItemId: string | null,
   ) =>
-    invoke<void>("bridge_creds_complete", {
-      id,
-      allow,
-      selectedItemId,
-    }),
+    invoke<void>("bridge_creds_complete", { id, allow, selectedItemId }),
+
+  prefsGet: () => invoke<Prefs>("prefs_get"),
+  prefsSet: (prefs: Prefs) => invoke<void>("prefs_set", { prefs }),
 };
 
 export type PairRequest = {

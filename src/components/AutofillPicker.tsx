@@ -1,29 +1,36 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, Star, X } from "lucide-react";
+import { Search, Star } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "../lib/ipc";
 import type { ItemSummary } from "../lib/schemas";
 import { fuzzyScore } from "../lib/fuzzy";
+import { Modal } from "./ui/Modal";
 
 export function AutofillPicker() {
-  const [open, setOpen]   = useState(false);
-  const [items, setItems] = useState<ItemSummary[]>([]);
-  const [query, setQuery] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen]       = useState(false);
+  const [items, setItems]     = useState<ItemSummary[]>([]);
+  const [query, setQuery]     = useState("");
+  const [cursor, setCursor]   = useState(0);
+  const [error, setError]     = useState<string | null>(null);
+  const [hwnd, setHwnd]       = useState(0);
+  const inputRef              = useRef<HTMLInputElement>(null);
+  const listRef               = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
-    listen<void>("autofill:open_picker", async () => {
+    listen<number>("autofill:open_picker", async (e) => {
+      const targetHwnd = e.payload ?? 0;
+      setHwnd(targetHwnd);
       try {
         const list = await api.itemList();
         setItems(list.filter((i) => i.kind === "login"));
         setQuery("");
+        setCursor(0);
         setError(null);
         setOpen(true);
         setTimeout(() => inputRef.current?.focus(), 50);
-      } catch (e: any) {
-        setError(e?.message ?? String(e));
+      } catch (err: any) {
+        setError(err?.message ?? String(err));
         setOpen(true);
       }
     }).then((u) => (unlisten = u));
@@ -41,88 +48,81 @@ export function AutofillPicker() {
       .slice(0, 20);
   }, [items, query]);
 
+  useEffect(() => { setCursor(0); }, [query]);
+
+  useEffect(() => {
+    const el = listRef.current?.children[cursor] as HTMLElement | undefined;
+    el?.scrollIntoView({ block: "nearest" });
+  }, [cursor]);
+
   async function pick(id: string) {
     setError(null);
     setOpen(false);
     try {
-      await api.autofillFill(id);
-    } catch (e: any) {
-      setError(e?.message ?? String(e));
+      await api.autofillFill(id, hwnd);
+    } catch (err: any) {
+      setError(err?.message ?? String(err));
       setOpen(true);
     }
   }
 
   function onKey(e: React.KeyboardEvent) {
-    if (e.key === "Escape") setOpen(false);
-    if (e.key === "Enter" && visible[0]) pick(visible[0].id);
+    if (e.key === "ArrowDown") { e.preventDefault(); setCursor(c => Math.min(c + 1, visible.length - 1)); }
+    if (e.key === "ArrowUp")   { e.preventDefault(); setCursor(c => Math.max(c - 1, 0)); }
+    if (e.key === "Enter" && visible[cursor]) pick(visible[cursor].id);
   }
 
-  if (!open) return null;
-
   return (
-    <div className="modal-backdrop" onClick={() => setOpen(false)}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <span className="modal-title">Quick autofill</span>
-          <button className="btn-icon" onClick={() => setOpen(false)}>
-            <X size={16} />
-          </button>
-        </div>
-        <p className="modal-subtitle">
-          Focus a password field in any app, then choose a login. Credentials will be
-          typed via UI Automation.
-        </p>
+    <Modal open={open} onClose={() => setOpen(false)} title="Quick autofill" width="480px">
+      <p className="modal-subtitle">
+        Press <kbd>Ctrl+Shift+\</kbd> in any app to open this. Focus the password field first,
+        then pick a login — credentials will be typed via UI Automation.
+      </p>
 
-        <div style={{ position: "relative" }}>
-          <Search
-            size={13}
-            style={{
-              position: "absolute",
-              left: 10,
-              top: "50%",
-              transform: "translateY(-50%)",
-              color: "var(--text-muted)",
-              pointerEvents: "none",
-            }}
-          />
-          <input
-            ref={inputRef}
-            className="search"
-            placeholder="Search logins…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={onKey}
-            style={{ paddingLeft: 30 }}
-          />
-        </div>
-
-        <div style={{ maxHeight: 300, overflowY: "auto", display: "flex", flexDirection: "column", gap: 1 }}>
-          {visible.length === 0 ? (
-            <p style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", padding: "var(--sp-3) var(--sp-2)" }}>
-              No logins found.
-            </p>
-          ) : (
-            visible.map((i) => (
-              <button
-                key={i.id}
-                className="item-row"
-                onClick={() => pick(i.id)}
-              >
-                <span className="item-row-name">{i.name}</span>
-                {i.favorite && (
-                  <Star size={10} className="item-row-fav" fill="var(--yellow)" />
-                )}
-              </button>
-            ))
-          )}
-        </div>
-
-        {error && <p className="error">{error}</p>}
-
-        <div className="modal-actions">
-          <button className="ghost" onClick={() => setOpen(false)}>Close</button>
-        </div>
+      <div style={{ position: "relative" }}>
+        <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", pointerEvents: "none" }} />
+        <input
+          ref={inputRef}
+          className="search"
+          placeholder="Search logins…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={onKey}
+          style={{ paddingLeft: 30 }}
+          aria-label="Search logins for autofill"
+          aria-controls="autofill-list"
+          aria-activedescendant={visible[cursor] ? `af-opt-${visible[cursor].id}` : undefined}
+        />
       </div>
-    </div>
+
+      <div ref={listRef} id="autofill-list" className="autofill-list" role="listbox" aria-label="Login items">
+        {visible.length === 0 ? (
+          <p style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", padding: "var(--sp-3) var(--sp-2)" }}>
+            No logins found.
+          </p>
+        ) : (
+          visible.map((i, idx) => (
+            <button
+              key={i.id}
+              id={`af-opt-${i.id}`}
+              className={"item-row" + (idx === cursor ? " active" : "")}
+              role="option"
+              aria-selected={idx === cursor}
+              onClick={() => pick(i.id)}
+              onMouseEnter={() => setCursor(idx)}
+            >
+              <span className="item-row-name">{i.name}</span>
+              {i.favorite && <Star size={10} className="item-row-fav" fill="var(--yellow)" />}
+            </button>
+          ))
+        )}
+      </div>
+
+      {error && <p className="error">{error}</p>}
+
+      <div className="modal-actions">
+        <button className="ghost" onClick={() => setOpen(false)}>Close</button>
+      </div>
+    </Modal>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Copy, Eye, EyeOff, Star, StarOff, Wand2, X } from "lucide-react";
+import { Copy, Eye, EyeOff, Star, StarOff, Vault, Wand2 } from "lucide-react";
 import { api, type Folder as FolderT } from "../lib/ipc";
 import {
   emptyPayload,
@@ -10,7 +10,11 @@ import {
 } from "../lib/schemas";
 import { PasswordGenerator } from "./PasswordGenerator";
 import { TotpBadge } from "./TotpBadge";
-import { Vault } from "lucide-react";
+import { Modal } from "./ui/Modal";
+import { EmptyState } from "./ui/EmptyState";
+import { useToast } from "../contexts/ToastContext";
+import { usePasswordStrength } from "../hooks/usePasswordStrength";
+import { usePrefs } from "../contexts/PrefsContext";
 
 type Props = {
   itemId: string | "new" | null;
@@ -34,11 +38,13 @@ function newDraft(kind: ItemKind = "login"): Draft {
 }
 
 export function ItemEditor({ itemId, folders, onSaved, onDeleted, onCancel }: Props) {
-  const [draft, setDraft]       = useState<Draft | null>(null);
-  const [busy, setBusy]         = useState(false);
-  const [error, setError]       = useState<string | null>(null);
-  const [showGen, setShowGen]   = useState(false);
-  const [genTarget, setGenTarget] = useState<string | null>(null);
+  const { toast } = useToast();
+  const { prefs } = usePrefs();
+  const [draft, setDraft]           = useState<Draft | null>(null);
+  const [busy, setBusy]             = useState(false);
+  const [error, setError]           = useState<string | null>(null);
+  const [showGen, setShowGen]       = useState(false);
+  const [genTarget, setGenTarget]   = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   useEffect(() => {
@@ -47,23 +53,17 @@ export function ItemEditor({ itemId, folders, onSaved, onDeleted, onCancel }: Pr
     (async () => {
       const item = await api.itemGet(itemId);
       if (!item) { setError("Item not found"); return; }
-      setDraft({
-        id: item.id,
-        kind: item.kind,
-        name: item.name,
-        favorite: item.favorite,
-        folder_id: item.folder_id,
-        payload: item.payload,
-      });
+      setDraft({ id: item.id, kind: item.kind, name: item.name, favorite: item.favorite, folder_id: item.folder_id, payload: item.payload });
     })();
   }, [itemId]);
 
   if (draft === null) {
     return (
-      <div className="empty-state">
-        <Vault size={48} className="empty-state-icon" />
-        <p>Select an item or create a new one.</p>
-      </div>
+      <EmptyState
+        icon={<Vault size={48} color="var(--border)" />}
+        title="Select an item"
+        description="Choose an item from the sidebar or create a new one."
+      />
     );
   }
 
@@ -77,33 +77,18 @@ export function ItemEditor({ itemId, folders, onSaved, onDeleted, onCancel }: Pr
 
   async function save() {
     if (!draft) return;
-    setBusy(true);
-    setError(null);
+    setBusy(true); setError(null);
     try {
       if (draft.id === null) {
-        await api.itemCreate({
-          kind: draft.kind,
-          name: draft.name,
-          favorite: draft.favorite,
-          folder_id: draft.folder_id,
-          payload: draft.payload,
-        });
+        await api.itemCreate({ kind: draft.kind, name: draft.name, favorite: draft.favorite, folder_id: draft.folder_id, payload: draft.payload });
       } else {
-        await api.itemUpdate({
-          id: draft.id,
-          kind: draft.kind,
-          name: draft.name,
-          favorite: draft.favorite,
-          folder_id: draft.folder_id,
-          payload: draft.payload,
-        });
+        await api.itemUpdate({ id: draft.id, kind: draft.kind, name: draft.name, favorite: draft.favorite, folder_id: draft.folder_id, payload: draft.payload });
       }
+      toast("Saved successfully", "success");
       onSaved();
     } catch (e: any) {
       setError(e?.message ?? String(e));
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   }
 
   async function remove() {
@@ -111,23 +96,19 @@ export function ItemEditor({ itemId, folders, onSaved, onDeleted, onCancel }: Pr
     setBusy(true);
     try {
       await api.itemDelete(draft.id);
+      toast("Item deleted", "info");
       onDeleted();
     } catch (e: any) {
       setError(e?.message ?? String(e));
-    } finally {
-      setBusy(false);
-      setDeleteConfirm(false);
-    }
+    } finally { setBusy(false); setDeleteConfirm(false); }
   }
 
-  function copy(text: string) {
-    api.clipboardCopy(text, 20).catch(() => {});
+  function copy(text: string, label = "Copied") {
+    api.clipboardCopy(text, prefs.clipboard_ttl_secs).catch(() => {});
+    toast(`${label} — clears in ${prefs.clipboard_ttl_secs}s`, "success", 2500);
   }
 
-  function openGen(field: string) {
-    setGenTarget(field);
-    setShowGen(true);
-  }
+  function openGen(field: string) { setGenTarget(field); setShowGen(true); }
 
   function applyGen(pw: string) {
     if (!draft || !genTarget) return;
@@ -137,18 +118,19 @@ export function ItemEditor({ itemId, folders, onSaved, onDeleted, onCancel }: Pr
 
   return (
     <div className="editor">
-      {/* Header */}
       <div className="editor-head">
         <input
           className="name-input"
           placeholder="Item name"
           value={draft.name}
           onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+          aria-label="Item name"
         />
         <button
           type="button"
           className={"fav-btn" + (draft.favorite ? " active" : "")}
           title={draft.favorite ? "Remove from favorites" : "Add to favorites"}
+          aria-label={draft.favorite ? "Remove from favorites" : "Add to favorites"}
           onClick={() => setDraft({ ...draft, favorite: !draft.favorite })}
         >
           {draft.favorite
@@ -157,12 +139,11 @@ export function ItemEditor({ itemId, folders, onSaved, onDeleted, onCancel }: Pr
         </button>
       </div>
 
-      {/* Kind + Folder */}
       <div className="editor-meta">
         {draft.id === null && (
           <div className="field">
-            <span>Kind</span>
-            <select value={draft.kind} onChange={(e) => changeKind(e.target.value as ItemKind)}>
+            <label htmlFor="item-kind">Kind</label>
+            <select id="item-kind" value={draft.kind} onChange={(e) => changeKind(e.target.value as ItemKind)}>
               {ItemKindSchema.options.map((k) => (
                 <option key={k} value={k}>{KIND_LABELS[k]}</option>
               ))}
@@ -170,35 +151,23 @@ export function ItemEditor({ itemId, folders, onSaved, onDeleted, onCancel }: Pr
           </div>
         )}
         <div className="field">
-          <span>Folder</span>
-          <select
-            value={draft.folder_id ?? ""}
-            onChange={(e) => setDraft({ ...draft, folder_id: e.target.value || null })}
-          >
+          <label htmlFor="item-folder">Folder</label>
+          <select id="item-folder" value={draft.folder_id ?? ""} onChange={(e) => setDraft({ ...draft, folder_id: e.target.value || null })}>
             <option value="">— Unfiled —</option>
-            {folders.map((f) => (
-              <option key={f.id} value={f.id}>{f.name}</option>
-            ))}
+            {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
         </div>
       </div>
 
-      {/* Payload fields */}
-      <PayloadFields
-        payload={draft.payload}
-        onChange={updatePayload}
-        onCopy={copy}
-        onGenerate={openGen}
-      />
+      <PayloadFields payload={draft.payload} onChange={updatePayload} onCopy={copy} onGenerate={openGen} />
 
       {error && <p className="error">{error}</p>}
 
-      {/* Actions */}
       <div className="editor-actions">
         <button className="ghost" onClick={onCancel} disabled={busy}>Cancel</button>
         <span className="spacer" />
         {draft.id !== null && (
-          <button className="danger" onClick={() => setDeleteConfirm(true)} disabled={busy}>
+          <button className="danger" onClick={() => setDeleteConfirm(true)} disabled={busy} aria-label="Delete item">
             Delete
           </button>
         )}
@@ -207,7 +176,6 @@ export function ItemEditor({ itemId, folders, onSaved, onDeleted, onCancel }: Pr
         </button>
       </div>
 
-      {/* Password Generator */}
       {showGen && (
         <PasswordGenerator
           onUse={applyGen}
@@ -215,27 +183,15 @@ export function ItemEditor({ itemId, folders, onSaved, onDeleted, onCancel }: Pr
         />
       )}
 
-      {/* Delete confirmation modal */}
-      {deleteConfirm && (
-        <div className="modal-backdrop" onClick={() => setDeleteConfirm(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <span className="modal-title">Delete item</span>
-              <button className="btn-icon" onClick={() => setDeleteConfirm(false)}>
-                <X size={16} />
-              </button>
-            </div>
-            <p className="modal-subtitle">
-              Delete <strong style={{ color: "var(--text-primary)" }}>{draft.name}</strong>?
-              This cannot be undone.
-            </p>
-            <div className="modal-actions">
-              <button className="ghost" onClick={() => setDeleteConfirm(false)} disabled={busy}>Cancel</button>
-              <button className="danger" onClick={remove} disabled={busy}>Delete</button>
-            </div>
-          </div>
+      <Modal open={deleteConfirm} onClose={() => setDeleteConfirm(false)} title="Delete item">
+        <p className="modal-subtitle">
+          Delete <strong style={{ color: "var(--text-primary)" }}>{draft.name}</strong>? This cannot be undone.
+        </p>
+        <div className="modal-actions">
+          <button className="ghost" onClick={() => setDeleteConfirm(false)} disabled={busy}>Cancel</button>
+          <button className="danger" onClick={remove} disabled={busy}>Delete</button>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }
@@ -245,18 +201,26 @@ export function ItemEditor({ itemId, folders, onSaved, onDeleted, onCancel }: Pr
 type FieldsProps = {
   payload: ItemPayload;
   onChange: (p: Partial<ItemPayload>) => void;
-  onCopy: (text: string) => void;
+  onCopy: (text: string, label?: string) => void;
   onGenerate: (field: string) => void;
 };
 
-function SecretField({
-  label, value, onChange, onCopy, onGenerate,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  onCopy?: () => void;
-  onGenerate?: () => void;
+function StrengthMeter({ value }: { value: string }) {
+  const { score, label, color } = usePasswordStrength(value);
+  if (!value) return null;
+  return (
+    <div>
+      <div className="strength-bar">
+        <div className="strength-fill" style={{ width: `${(score + 1) * 20}%`, background: color }} />
+      </div>
+      <span className="strength-label" style={{ color }}>{label}</span>
+    </div>
+  );
+}
+
+function SecretField({ label, value, onChange, onCopy, onGenerate, showStrength }: {
+  label: string; value: string; onChange: (v: string) => void;
+  onCopy?: () => void; onGenerate?: () => void; showStrength?: boolean;
 }) {
   const [show, setShow] = useState(false);
   return (
@@ -267,46 +231,34 @@ function SecretField({
           type={show ? "text" : "password"}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          aria-label={label}
         />
-        <button
-          type="button"
-          className="btn-icon-sm"
-          title={show ? "Hide" : "Show"}
-          onClick={() => setShow((s) => !s)}
-        >
+        <button type="button" className="btn-icon-sm" title={show ? "Hide" : "Show"} aria-label={show ? "Hide value" : "Show value"} onClick={() => setShow(s => !s)}>
           {show ? <EyeOff size={13} /> : <Eye size={13} />}
         </button>
         {onCopy && (
-          <button type="button" className="btn-icon-sm" title="Copy" onClick={onCopy}>
+          <button type="button" className="btn-icon-sm" title="Copy" aria-label={`Copy ${label}`} onClick={onCopy}>
             <Copy size={13} />
           </button>
         )}
         {onGenerate && (
-          <button type="button" className="btn-icon-sm" title="Generate" onClick={onGenerate}>
+          <button type="button" className="btn-icon-sm" title="Generate" aria-label="Generate password" onClick={onGenerate}>
             <Wand2 size={13} />
           </button>
         )}
       </div>
+      {showStrength && <StrengthMeter value={value} />}
     </div>
   );
 }
 
-function TextField({
-  label, value, onChange, textarea,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  textarea?: boolean;
-}) {
+function TextField({ label, value, onChange, textarea }: { label: string; value: string; onChange: (v: string) => void; textarea?: boolean }) {
   return (
     <div className="field">
-      <span>{label}</span>
-      {textarea ? (
-        <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={4} />
-      ) : (
-        <input value={value} onChange={(e) => onChange(e.target.value)} />
-      )}
+      <label>{label}</label>
+      {textarea
+        ? <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={4} aria-label={label} />
+        : <input value={value} onChange={(e) => onChange(e.target.value)} aria-label={label} />}
     </div>
   );
 }
@@ -324,144 +276,110 @@ function PayloadFields({ payload, onChange, onCopy, onGenerate }: FieldsProps) {
       return (
         <div className="editor-section">
           <SectionTitle>Account details</SectionTitle>
-          <TextField label="Username" value={payload.username} onChange={(v) => onChange({ username: v })} />
-          <SecretField
-            label="Password"
-            value={payload.password}
-            onChange={(v) => onChange({ password: v })}
-            onCopy={() => onCopy(payload.password)}
-            onGenerate={() => onGenerate("password")}
-          />
-          <TextField label="URL" value={nullable(payload.url)} onChange={(v) => onChange({ url: orNull(v) })} />
+          <TextField label="Username" value={payload.username} onChange={v => onChange({ username: v })} />
+          <SecretField label="Password" value={payload.password} onChange={v => onChange({ password: v })}
+            onCopy={() => onCopy(payload.password, "Password copied")}
+            onGenerate={() => onGenerate("password")} showStrength />
+          <TextField label="URL" value={nullable(payload.url)} onChange={v => onChange({ url: orNull(v) })} />
           <SectionTitle>Two-factor authentication</SectionTitle>
-          <TextField label="TOTP secret" value={nullable(payload.totp_secret)} onChange={(v) => onChange({ totp_secret: orNull(v) })} />
+          <TextField label="TOTP secret" value={nullable(payload.totp_secret)} onChange={v => onChange({ totp_secret: orNull(v) })} />
           {payload.totp_secret && payload.totp_secret.trim().length >= 8 && (
             <div className="field">
               <span>Current code</span>
-              <TotpBadge
-                spec={{ secret: payload.totp_secret, algorithm: "SHA1", digits: 6, period: 30 }}
-                onCopy={(c) => onCopy(c.replace(/\s/g, ""))}
-              />
+              <TotpBadge spec={{ secret: payload.totp_secret, algorithm: "SHA1", digits: 6, period: 30 }} onCopy={c => onCopy(c.replace(/\s/g, ""), "TOTP code copied")} />
             </div>
           )}
           <SectionTitle>Notes</SectionTitle>
-          <TextField label="Notes" value={nullable(payload.notes)} onChange={(v) => onChange({ notes: orNull(v) })} textarea />
+          <TextField label="Notes" value={nullable(payload.notes)} onChange={v => onChange({ notes: orNull(v) })} textarea />
         </div>
       );
-
     case "card":
       return (
         <div className="editor-section">
           <SectionTitle>Card details</SectionTitle>
-          <TextField label="Cardholder" value={payload.cardholder} onChange={(v) => onChange({ cardholder: v })} />
-          <SecretField label="Number" value={payload.number} onChange={(v) => onChange({ number: v })} onCopy={() => onCopy(payload.number)} />
-          <SecretField label="CVV" value={payload.cvv} onChange={(v) => onChange({ cvv: v })} onCopy={() => onCopy(payload.cvv)} />
+          <TextField label="Cardholder" value={payload.cardholder} onChange={v => onChange({ cardholder: v })} />
+          <SecretField label="Number" value={payload.number} onChange={v => onChange({ number: v })} onCopy={() => onCopy(payload.number, "Card number copied")} />
+          <SecretField label="CVV" value={payload.cvv} onChange={v => onChange({ cvv: v })} onCopy={() => onCopy(payload.cvv, "CVV copied")} />
           <div className="row-2">
-            <div className="field">
-              <span>Expiry month</span>
-              <input type="number" min={1} max={12} value={payload.expiry_month} onChange={(e) => onChange({ expiry_month: Number(e.target.value) })} />
-            </div>
-            <div className="field">
-              <span>Expiry year</span>
-              <input type="number" min={2000} max={2099} value={payload.expiry_year} onChange={(e) => onChange({ expiry_year: Number(e.target.value) })} />
-            </div>
+            <div className="field"><label>Expiry month</label><input type="number" min={1} max={12} value={payload.expiry_month} onChange={e => onChange({ expiry_month: Number(e.target.value) })} /></div>
+            <div className="field"><label>Expiry year</label><input type="number" min={2000} max={2099} value={payload.expiry_year} onChange={e => onChange({ expiry_year: Number(e.target.value) })} /></div>
           </div>
           <SectionTitle>Notes</SectionTitle>
-          <TextField label="Notes" value={nullable(payload.notes)} onChange={(v) => onChange({ notes: orNull(v) })} textarea />
+          <TextField label="Notes" value={nullable(payload.notes)} onChange={v => onChange({ notes: orNull(v) })} textarea />
         </div>
       );
-
     case "pin_note":
       return (
         <div className="editor-section">
           <SectionTitle>Content</SectionTitle>
-          <TextField label="Title" value={payload.title} onChange={(v) => onChange({ title: v })} />
-          <TextField label="Body" value={payload.body} onChange={(v) => onChange({ body: v })} textarea />
+          <TextField label="Title" value={payload.title} onChange={v => onChange({ title: v })} />
+          <TextField label="Body" value={payload.body} onChange={v => onChange({ body: v })} textarea />
         </div>
       );
-
     case "crypto_wallet":
       return (
         <div className="editor-section">
           <SectionTitle>Wallet details</SectionTitle>
-          <TextField label="Wallet name" value={payload.wallet_name} onChange={(v) => onChange({ wallet_name: v })} />
-          <SecretField label="Seed phrase" value={payload.seed_phrase} onChange={(v) => onChange({ seed_phrase: v })} onCopy={() => onCopy(payload.seed_phrase)} />
-          <TextField label="Chain" value={nullable(payload.chain)} onChange={(v) => onChange({ chain: orNull(v) })} />
-          <TextField label="Address" value={nullable(payload.address)} onChange={(v) => onChange({ address: orNull(v) })} />
+          <TextField label="Wallet name" value={payload.wallet_name} onChange={v => onChange({ wallet_name: v })} />
+          <SecretField label="Seed phrase" value={payload.seed_phrase} onChange={v => onChange({ seed_phrase: v })} onCopy={() => onCopy(payload.seed_phrase, "Seed phrase copied")} />
+          <TextField label="Chain" value={nullable(payload.chain)} onChange={v => onChange({ chain: orNull(v) })} />
+          <TextField label="Address" value={nullable(payload.address)} onChange={v => onChange({ address: orNull(v) })} />
           <SectionTitle>Notes</SectionTitle>
-          <TextField label="Notes" value={nullable(payload.notes)} onChange={(v) => onChange({ notes: orNull(v) })} textarea />
+          <TextField label="Notes" value={nullable(payload.notes)} onChange={v => onChange({ notes: orNull(v) })} textarea />
         </div>
       );
-
     case "identity":
       return (
         <div className="editor-section">
           <SectionTitle>Personal details</SectionTitle>
-          <TextField label="Full name" value={payload.full_name} onChange={(v) => onChange({ full_name: v })} />
-          <TextField label="National ID" value={nullable(payload.national_id)} onChange={(v) => onChange({ national_id: orNull(v) })} />
-          <TextField label="Passport" value={nullable(payload.passport)} onChange={(v) => onChange({ passport: orNull(v) })} />
+          <TextField label="Full name" value={payload.full_name} onChange={v => onChange({ full_name: v })} />
+          <TextField label="National ID" value={nullable(payload.national_id)} onChange={v => onChange({ national_id: orNull(v) })} />
+          <TextField label="Passport" value={nullable(payload.passport)} onChange={v => onChange({ passport: orNull(v) })} />
           <SectionTitle>Contact</SectionTitle>
-          <TextField label="Email" value={nullable(payload.email)} onChange={(v) => onChange({ email: orNull(v) })} />
-          <TextField label="Phone" value={nullable(payload.phone)} onChange={(v) => onChange({ phone: orNull(v) })} />
-          <TextField label="Address" value={nullable(payload.address)} onChange={(v) => onChange({ address: orNull(v) })} textarea />
+          <TextField label="Email" value={nullable(payload.email)} onChange={v => onChange({ email: orNull(v) })} />
+          <TextField label="Phone" value={nullable(payload.phone)} onChange={v => onChange({ phone: orNull(v) })} />
+          <TextField label="Address" value={nullable(payload.address)} onChange={v => onChange({ address: orNull(v) })} textarea />
           <SectionTitle>Notes</SectionTitle>
-          <TextField label="Notes" value={nullable(payload.notes)} onChange={(v) => onChange({ notes: orNull(v) })} textarea />
+          <TextField label="Notes" value={nullable(payload.notes)} onChange={v => onChange({ notes: orNull(v) })} textarea />
         </div>
       );
-
     case "ssh_key":
       return (
         <div className="editor-section">
           <SectionTitle>SSH key</SectionTitle>
-          <TextField label="Label" value={payload.label} onChange={(v) => onChange({ label: v })} />
-          <SecretField label="Private key" value={payload.private_key} onChange={(v) => onChange({ private_key: v })} onCopy={() => onCopy(payload.private_key)} />
-          <TextField label="Public key" value={nullable(payload.public_key)} onChange={(v) => onChange({ public_key: orNull(v) })} textarea />
-          <SecretField label="Passphrase" value={nullable(payload.passphrase)} onChange={(v) => onChange({ passphrase: orNull(v) })} />
+          <TextField label="Label" value={payload.label} onChange={v => onChange({ label: v })} />
+          <SecretField label="Private key" value={payload.private_key} onChange={v => onChange({ private_key: v })} onCopy={() => onCopy(payload.private_key, "Private key copied")} />
+          <TextField label="Public key" value={nullable(payload.public_key)} onChange={v => onChange({ public_key: orNull(v) })} textarea />
+          <SecretField label="Passphrase" value={nullable(payload.passphrase)} onChange={v => onChange({ passphrase: orNull(v) })} />
         </div>
       );
-
     case "api_key":
       return (
         <div className="editor-section">
           <SectionTitle>API credentials</SectionTitle>
-          <TextField label="Service" value={payload.service} onChange={(v) => onChange({ service: v })} />
-          <SecretField label="Key" value={payload.key} onChange={(v) => onChange({ key: v })} onCopy={() => onCopy(payload.key)} />
-          <SecretField label="Secret" value={nullable(payload.secret)} onChange={(v) => onChange({ secret: orNull(v) })} onCopy={() => onCopy(payload.secret ?? "")} />
+          <TextField label="Service" value={payload.service} onChange={v => onChange({ service: v })} />
+          <SecretField label="Key" value={payload.key} onChange={v => onChange({ key: v })} onCopy={() => onCopy(payload.key, "API key copied")} />
+          <SecretField label="Secret" value={nullable(payload.secret)} onChange={v => onChange({ secret: orNull(v) })} onCopy={() => onCopy(payload.secret ?? "", "Secret copied")} />
           <SectionTitle>Notes</SectionTitle>
-          <TextField label="Notes" value={nullable(payload.notes)} onChange={(v) => onChange({ notes: orNull(v) })} textarea />
+          <TextField label="Notes" value={nullable(payload.notes)} onChange={v => onChange({ notes: orNull(v) })} textarea />
         </div>
       );
-
     case "totp":
       return (
         <div className="editor-section">
           <SectionTitle>TOTP authenticator</SectionTitle>
-          <TextField label="Label" value={payload.label} onChange={(v) => onChange({ label: v })} />
-          <SecretField label="Secret (Base32)" value={payload.secret} onChange={(v) => onChange({ secret: v })} onCopy={() => onCopy(payload.secret)} />
-          <TextField label="Issuer" value={nullable(payload.issuer)} onChange={(v) => onChange({ issuer: orNull(v) })} />
+          <TextField label="Label" value={payload.label} onChange={v => onChange({ label: v })} />
+          <SecretField label="Secret (Base32)" value={payload.secret} onChange={v => onChange({ secret: v })} onCopy={() => onCopy(payload.secret, "TOTP secret copied")} />
+          <TextField label="Issuer" value={nullable(payload.issuer)} onChange={v => onChange({ issuer: orNull(v) })} />
           <div className="row-2">
-            <div className="field">
-              <span>Algorithm</span>
-              <select value={payload.algorithm} onChange={(e) => onChange({ algorithm: e.target.value })}>
-                <option>SHA1</option><option>SHA256</option><option>SHA512</option>
-              </select>
-            </div>
-            <div className="field">
-              <span>Digits</span>
-              <input type="number" min={6} max={8} value={payload.digits} onChange={(e) => onChange({ digits: Number(e.target.value) })} />
-            </div>
-            <div className="field">
-              <span>Period (s)</span>
-              <input type="number" min={10} max={120} value={payload.period} onChange={(e) => onChange({ period: Number(e.target.value) })} />
-            </div>
+            <div className="field"><label>Algorithm</label><select value={payload.algorithm} onChange={e => onChange({ algorithm: e.target.value })}><option>SHA1</option><option>SHA256</option><option>SHA512</option></select></div>
+            <div className="field"><label>Digits</label><input type="number" min={6} max={8} value={payload.digits} onChange={e => onChange({ digits: Number(e.target.value) })} /></div>
+            <div className="field"><label>Period (s)</label><input type="number" min={10} max={120} value={payload.period} onChange={e => onChange({ period: Number(e.target.value) })} /></div>
           </div>
           {payload.secret && payload.secret.trim().length >= 8 && (
             <div className="field">
               <span>Current code</span>
-              <TotpBadge
-                spec={{ secret: payload.secret, algorithm: payload.algorithm, digits: payload.digits, period: payload.period }}
-                onCopy={(c) => onCopy(c.replace(/\s/g, ""))}
-              />
+              <TotpBadge spec={{ secret: payload.secret, algorithm: payload.algorithm, digits: payload.digits, period: payload.period }} onCopy={c => onCopy(c.replace(/\s/g, ""), "TOTP code copied")} />
             </div>
           )}
         </div>

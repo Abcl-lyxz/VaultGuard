@@ -1,12 +1,12 @@
-// VaultGuard MV3 service worker — talks to the desktop bridge over loopback HTTP.
+// VaultGuard MV3 service worker v0.3.0 — talks to the desktop bridge over loopback HTTP.
 // Stores the per-extension Bearer token in chrome.storage.local. Pairing happens
 // once via the popup; thereafter the worker forwards credential requests from
 // content scripts to the desktop, which prompts the user for per-request approval.
 
-const BRIDGE = "http://127.0.0.1:62501";
+const BRIDGE = 'http://127.0.0.1:62501';
 
 async function getToken() {
-  const { vg_token } = await chrome.storage.local.get("vg_token");
+  const { vg_token } = await chrome.storage.local.get('vg_token');
   return vg_token || null;
 }
 
@@ -15,55 +15,79 @@ async function setToken(t) {
 }
 
 async function clearToken() {
-  await chrome.storage.local.remove("vg_token");
+  await chrome.storage.local.remove('vg_token');
 }
 
 async function pair() {
   const r = await fetch(`${BRIDGE}/v1/associate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ extension_name: "VaultGuard Browser Extension" }),
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ extension_name: 'VaultGuard Browser Extension' }),
   });
   if (!r.ok) throw new Error(`pair failed: ${r.status}`);
   const j = await r.json();
-  if (!j.token) throw new Error("no token in response");
+  if (!j.token) throw new Error('no token in response');
   await setToken(j.token);
   return j.token;
 }
 
 async function fetchCreds(origin) {
   const token = await getToken();
-  if (!token) throw new Error("not paired");
+  if (!token) throw new Error('not paired');
   const url = `${BRIDGE}/v1/credentials?origin=${encodeURIComponent(origin)}`;
   const r = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (r.status === 401) {
     await clearToken();
-    throw new Error("token rejected — please pair again");
+    throw new Error('token rejected — please pair again');
   }
-  if (r.status === 403) throw new Error("denied by user");
-  if (r.status === 408) throw new Error("approval timed out");
+  if (r.status === 403) throw new Error('denied by user');
+  if (r.status === 408) throw new Error('approval timed out');
   if (!r.ok) throw new Error(`bridge error ${r.status}`);
   return r.json();
 }
 
+// ── Helper: send fill_now to active tab ──────────────────────────────────────
+async function triggerFillOnActiveTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) return { ok: false, error: 'no active tab' };
+  try {
+    const resp = await chrome.tabs.sendMessage(tab.id, { type: 'vg:fill_now' });
+    return resp || { ok: false, error: 'no response from content script' };
+  } catch (e) {
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+// ── Keyboard command handler ──────────────────────────────────────────────────
+chrome.commands.onCommand.addListener(async (cmd) => {
+  if (cmd === '_execute_fill') {
+    await triggerFillOnActiveTab();
+  }
+});
+
+// ── Message handler ───────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     try {
-      if (msg?.type === "vg:pair") {
+      if (msg?.type === 'vg:pair') {
         const token = await pair();
         sendResponse({ ok: true, token });
-      } else if (msg?.type === "vg:status") {
+      } else if (msg?.type === 'vg:status') {
         sendResponse({ ok: true, paired: !!(await getToken()) });
-      } else if (msg?.type === "vg:unpair") {
+      } else if (msg?.type === 'vg:unpair') {
         await clearToken();
         sendResponse({ ok: true });
-      } else if (msg?.type === "vg:fetch_creds") {
+      } else if (msg?.type === 'vg:fetch_creds') {
         const j = await fetchCreds(msg.origin);
         sendResponse({ ok: true, items: j.items || [] });
+      } else if (msg?.type === 'vg:fill_now') {
+        // From popup: forward to active tab content script
+        const result = await triggerFillOnActiveTab();
+        sendResponse(result);
       } else {
-        sendResponse({ ok: false, error: "unknown message" });
+        sendResponse({ ok: false, error: 'unknown message' });
       }
     } catch (e) {
       sendResponse({ ok: false, error: String(e?.message || e) });

@@ -1,0 +1,140 @@
+/* ============================================================
+   VaultGuard Design Tokens — light + dark + system
+   ============================================================ */
+
+/* ── Dark theme (default) ── */
+[data-theme="dark"], :root {
+  /* Surfaces */
+  --bg-base:    #0d1117;
+  --bg-card:    #161b22;
+  --bg-subtle:  #1c2128;
+  --bg-hover:   #21262d;
+  --bg-active:  #2a3347;
+  --bg-overlay: rgba(0, 0, 0, 0.65);
+
+  /* Borders */
+  --border:     #30363d;
+  --border-sub: #21262d;
+  --border-focus: #5b8cff;
+
+  /* Text */
+  --text-primary:   #e6edf3;
+  --text-secondary: #8b949e;
+  --text-muted:     #6e7681;
+  --text-disabled:  #484f58;
+
+  /* Accent */
+  --accent:        #5b8cff;
+  --accent-hover:  #4a7ae8;
+  --accent-subtle: rgba(91, 140, 255, 0.12);
+
+  /* Semantic */
+  --success:        #3fb950;
+  --success-subtle: rgba(63, 185, 80, 0.12);
+  --danger:         #f85149;
+  --danger-hover:   #da3633;
+  --danger-subtle:  rgba(248, 81, 73, 0.12);
+  --warning:        #ffd666;
+  --warning-subtle: rgba(255, 214, 102, 0.12);
+  --cyan:           #79c0ff;
+  --cyan-subtle:    rgba(121, 192, 255, 0.12);
+
+  /* Shadows */
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.4);
+  --shadow-md:  0 4px 16px rgba(0,0,0,0.5);
+  --shadow-lg:  0 8px 32px rgba(0,0,0,0.6);
+
+  /* Scrollbar */
+  --scrollbar-thumb: #30363d;
+  --scrollbar-track: transparent;
+}
+
+/* ── Light theme ── */
+[data-theme="light"] {
+  /* Surfaces */
+  --bg-base:    #ffffff;
+  --bg-card:    #f6f8fa;
+  --bg-subtle:  #eaeef2;
+  --bg-hover:   #e2e8f0;
+  --bg-active:  #d0daeb;
+  --bg-overlay: rgba(0, 0, 0, 0.35);
+
+  /* Borders */
+  --border:     #d0d7de;
+  --border-sub: #afb8c1;
+  --border-focus: #4a7ae8;
+
+  /* Text */
+  --text-primary:   #1f2328;
+  --text-secondary: #656d76;
+  --text-muted:     #8c959f;
+  --text-disabled:  #bdc4cb;
+
+  /* Accent */
+  --accent:        #4a7ae8;
+  --accent-hover:  #3a6bd4;
+  --accent-subtle: rgba(74, 122, 232, 0.10);
+
+  /* Semantic */
+  --success:        #1a7f37;
+  --success-subtle: rgba(26, 127, 55, 0.10);
+  --danger:         #cf222e;
+  --danger-hover:   #a40e26;
+  --danger-subtle:  rgba(207, 34, 46, 0.10);
+  --warning:        #9a6700;
+  --warning-subtle: rgba(154, 103, 0, 0.10);
+  --cyan:           #0969da;
+  --cyan-subtle:    rgba(9, 105, 218, 0.10);
+
+  /* Shadows */
+  --shadow-sm:  0 1px 3px rgba(31,35,40,0.12);
+  --shadow-md:  0 4px 16px rgba(31,35,40,0.16);
+  --shadow-lg:  0 8px 32px rgba(31,35,40,0.20);
+
+  /* Scrollbar */
+  --scrollbar-thumb: #d0d7de;
+  --scrollbar-track: transparent;
+}
+
+/* ── Shared (theme-independent) ── */
+:root {
+  /* Spacing */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  /* Radii */
+  --r-xs: 3px;
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 8px;
+  --r-xl: 12px;
+  --r-2xl: 14px;
+  --r-full: 9999px;
+
+  /* Typography */
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --text-xs:   11px;
+  --text-sm:   13px;
+  --text-base: 14px;
+  --text-md:   15px;
+  --text-lg:   17px;
+  --text-xl:   20px;
+  --text-2xl:  22px;
+
+  /* Transitions */
+  --t-fast: 120ms;
+  --t:      200ms;
+  --t-slow: 300ms;
+
+  /* Z-index layers */
+  --z-dropdown: 50;
+  --z-modal:    100;
+  --z-toast:    200;
+  --z-palette:  300;
+}

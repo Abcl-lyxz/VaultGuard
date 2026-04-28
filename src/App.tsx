@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ShieldCheck } from "lucide-react";
 import { api, type CmdError } from "./lib/ipc";
 import { VaultView } from "./components/VaultView";
+import { ToastStack } from "./components/ui/Toast";
 import "./App.css";
 
 type Mode = "loading" | "create" | "unlock" | "unlocked";
@@ -68,67 +69,71 @@ function App() {
     setMode("unlock");
   }
 
-  if (mode === "loading") {
-    return (
-      <div className="auth-screen">
-        <div className="auth-card">
-          <div className="auth-logo">
-            <ShieldCheck size={28} className="auth-logo-icon" />
-            <span className="auth-logo-text">VaultGuard</span>
-          </div>
-          <p className="auth-subtitle">Loading…</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (mode === "unlocked") {
-    return <VaultView onLock={onLock} />;
-  }
-
   return (
-    <div className="auth-screen">
-      <div className="auth-card">
-        <div className="auth-logo">
-          <ShieldCheck size={28} className="auth-logo-icon" />
-          <span className="auth-logo-text">VaultGuard</span>
-        </div>
-        <p className="auth-subtitle">
-          {mode === "create"
-            ? "Set a master password to create your encrypted vault."
-            : "Enter your master password to unlock your vault."}
-        </p>
-        <form className="auth-form" onSubmit={mode === "create" ? onCreate : onUnlock}>
-          <div className="field">
-            <span>Master password</span>
-            <input
-              type="password"
-              placeholder="Enter master password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoFocus
-              disabled={busy}
-            />
-          </div>
-          {mode === "create" && (
-            <div className="field">
-              <span>Confirm password</span>
-              <input
-                type="password"
-                placeholder="Confirm master password"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                disabled={busy}
-              />
+    <>
+      {mode === "loading" && (
+        <div className="auth-screen">
+          <div className="auth-card">
+            <div className="auth-logo">
+              <ShieldCheck size={28} className="auth-logo-icon" />
+              <span className="auth-logo-text">VaultGuard</span>
             </div>
-          )}
-          {error && <p className="error">{error}</p>}
-          <button className="btn-primary" type="submit" disabled={busy || !password}>
-            {busy ? "Working…" : mode === "create" ? "Create vault" : "Unlock"}
-          </button>
-        </form>
-      </div>
-    </div>
+            <p className="auth-subtitle">Loading…</p>
+          </div>
+        </div>
+      )}
+
+      {mode === "unlocked" && <VaultView onLock={onLock} />}
+
+      {(mode === "create" || mode === "unlock") && (
+        <div className="auth-screen">
+          <div className="auth-card">
+            <div className="auth-logo">
+              <ShieldCheck size={28} className="auth-logo-icon" />
+              <span className="auth-logo-text">VaultGuard</span>
+            </div>
+            <p className="auth-subtitle">
+              {mode === "create"
+                ? "Set a master password to create your encrypted vault."
+                : "Enter your master password to unlock your vault."}
+            </p>
+            <form className="auth-form" onSubmit={mode === "create" ? onCreate : onUnlock}>
+              <div className="field">
+                <label htmlFor="master-pw">Master password</label>
+                <input
+                  id="master-pw"
+                  type="password"
+                  placeholder="Enter master password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoFocus
+                  disabled={busy}
+                />
+              </div>
+              {mode === "create" && (
+                <div className="field">
+                  <label htmlFor="confirm-pw">Confirm password</label>
+                  <input
+                    id="confirm-pw"
+                    type="password"
+                    placeholder="Confirm master password"
+                    value={confirm}
+                    onChange={(e) => setConfirm(e.target.value)}
+                    disabled={busy}
+                  />
+                </div>
+              )}
+              {error && <p className="error">{error}</p>}
+              <button className="btn-primary" type="submit" disabled={busy || !password}>
+                {busy ? "Working…" : mode === "create" ? "Create vault" : "Unlock"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <ToastStack />
+    </>
   );
 }
 

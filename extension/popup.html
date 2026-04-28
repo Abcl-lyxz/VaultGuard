@@ -14,7 +14,16 @@
       }
       h1 {
         font-size: 1rem;
+        margin: 0 0 2px;
+      }
+      #site-subtitle {
+        font-size: 0.78rem;
+        color: #a0a4ad;
         margin: 0 0 10px;
+        min-height: 1em;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       button {
         width: 100%;
@@ -26,11 +35,35 @@
         border-radius: 6px;
         font-weight: 600;
         cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        font-size: 0.9rem;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
       }
       button.ghost {
         background: transparent;
         color: #a0a4ad;
         border: 1px solid #2c313c;
+      }
+      button.ghost:disabled {
+        opacity: 0.35;
+      }
+      button#fill-btn {
+        background: #3b5bdb;
+        color: #e8e8ea;
+        margin-top: 10px;
+      }
+      button#fill-btn:not(:disabled):hover {
+        background: #4c6ef5;
+      }
+      button#fill-btn.filling {
+        opacity: 0.7;
+        cursor: wait;
       }
       .status {
         font-size: 0.85rem;
@@ -43,13 +76,31 @@
       .ok {
         color: #7dd3fc;
       }
+      .divider {
+        border: none;
+        border-top: 1px solid #1e2330;
+        margin: 10px 0 2px;
+      }
     </style>
   </head>
   <body>
     <h1>VaultGuard</h1>
+    <p id="site-subtitle"></p>
     <p id="status" class="status">Checking…</p>
     <button id="pair">Pair with desktop app</button>
     <button id="unpair" class="ghost">Forget pairing</button>
+    <hr class="divider" />
+    <button id="fill-btn" class="action-btn" disabled>
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+        viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="8" cy="15" r="4"/>
+        <path d="M12 15h8"/>
+        <path d="M16 11v8"/>
+        <path d="M20 8V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v3"/>
+      </svg>
+      Fill credentials
+    </button>
     <script src="popup.js"></script>
   </body>
 </html>

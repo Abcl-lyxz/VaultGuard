@@ -6,6 +6,8 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use psl::Psl as _;
+
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
@@ -35,9 +37,20 @@ struct VaultResolver {
 }
 
 fn host_match(saved: &str, requested: &str) -> bool {
-    let s = saved.trim_start_matches("www.").to_ascii_lowercase();
-    let r = requested.trim_start_matches("www.").to_ascii_lowercase();
-    s == r || r.ends_with(&format!(".{s}")) || s.ends_with(&format!(".{r}"))
+    // exact match first
+    if saved == requested { return true; }
+    // strip leading www. for comparison
+    let s = saved.strip_prefix("www.").unwrap_or(saved);
+    let r = requested.strip_prefix("www.").unwrap_or(requested);
+    if s == r { return true; }
+    // saved is a subdomain of requested (e.g. saved=mail.google.com, req=google.com) — OK
+    // but NOT the reverse (saved=google.com, req=evil.google.com.attacker.com should not match)
+    if s.ends_with(&format!(".{r}")) { return true; }
+    // eTLD+1 match using psl
+    if let (Some(s_domain), Some(r_domain)) = (psl::List.domain(s), psl::List.domain(r)) {
+        return s_domain.to_str() == r_domain.to_str();
+    }
+    false
 }
 
 impl Resolver for VaultResolver {
@@ -454,6 +467,7 @@ pub fn bridge_creds_complete(
 pub fn autofill_fill(
     state: State<'_, Mutex<AppState>>,
     item_id: Uuid,
+    target_hwnd: Option<u64>,
 ) -> Result<(), CmdError> {
     let item = {
         let s = state.lock().unwrap();
@@ -475,8 +489,36 @@ pub fn autofill_fill(
             })
         }
     };
-    autofill::uia::fill_focused(user.as_deref(), &pw).map_err(|m| CmdError {
+    autofill::uia::fill_focused(user.as_deref(), &pw, target_hwnd.unwrap_or(0)).map_err(|m| CmdError {
         code: "uia".into(),
         message: m,
     })
+}
+
+#[tauri::command]
+pub async fn prefs_get(app: AppHandle) -> Result<crate::prefs::Prefs, String> {
+    let path = crate::prefs::prefs_path(&app).map_err(|e| e.to_string())?;
+    if !path.exists() { return Ok(crate::prefs::Prefs::default()); }
+    let json = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&json).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn prefs_set(app: AppHandle, prefs: crate::prefs::Prefs) -> Result<(), String> {
+    let path = crate::prefs::prefs_path(&app).map_err(|e| e.to_string())?;
+    if let Some(dir) = path.parent() { std::fs::create_dir_all(dir).map_err(|e| e.to_string())?; }
+    let json = serde_json::to_string_pretty(&prefs).map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::host_match;
+    #[test]
+    fn host_match_no_false_positive() {
+        assert!(!host_match("evil.example.com", "example.com"));
+        assert!(host_match("mail.google.com", "google.com"));
+        assert!(host_match("example.com", "example.com"));
+        assert!(host_match("www.example.com", "example.com"));
+    }
 }

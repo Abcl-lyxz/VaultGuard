@@ -27,7 +27,6 @@ use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 use tiny_http::{Header, Method, Response, Server};
-use tokio::sync::oneshot;
 use url::Url;
 
 /// Loopback port for the bridge. Matches the extension's hardcoded target.
@@ -75,8 +74,8 @@ pub struct ApprovedCred {
 }
 
 struct Pending {
-    pair: HashMap<String, (oneshot::Sender<PairResult>, Instant)>,
-    creds: HashMap<String, (oneshot::Sender<CredsResult>, Vec<CredsCandidate>, Instant)>,
+    pair: HashMap<String, (std::sync::mpsc::SyncSender<PairResult>, Instant)>,
+    creds: HashMap<String, (std::sync::mpsc::SyncSender<CredsResult>, Vec<CredsCandidate>, Instant)>,
 }
 
 impl Pending {
@@ -98,6 +97,8 @@ pub struct BridgeState {
     pending: Mutex<Pending>,
     running: AtomicBool,
     req_ctr: AtomicU64,
+    last_associate: Mutex<Option<Instant>>,
+    associate_count_today: Mutex<u32>,
 }
 
 impl Default for BridgeState {
@@ -107,6 +108,8 @@ impl Default for BridgeState {
             pending: Mutex::new(Pending::new()),
             running: AtomicBool::new(false),
             req_ctr: AtomicU64::new(0),
+            last_associate: Mutex::new(None),
+            associate_count_today: Mutex::new(0),
         }
     }
 }
@@ -126,11 +129,14 @@ impl BridgeState {
 
     pub fn forget_tokens(&self) {
         self.tokens.lock().unwrap().clear();
+        *self.associate_count_today.lock().unwrap() = 0;
+        *self.last_associate.lock().unwrap() = None;
     }
 
     pub fn complete_pair(&self, id: &str, allow: bool) -> Result<(), String> {
         let mut p = self.pending.lock().unwrap();
         let (tx, _) = p.pair.remove(id).ok_or("no such pair request")?;
+        drop(p);
         let result = if allow {
             let mut raw = [0u8; 32];
             OsRng.fill_bytes(&mut raw);
@@ -279,11 +285,31 @@ fn handle(
     let _ = req.respond(resp);
 }
 
+const ASSOCIATE_COOLDOWN_SECS: u64 = 5;
+const ASSOCIATE_DAILY_CAP: u32 = 20;
+
 fn handle_associate(
     req: &mut tiny_http::Request,
     app: &AppHandle,
     state: &BridgeState,
 ) -> Response<std::io::Cursor<Vec<u8>>> {
+    // Rate-limit: max 1 request per ASSOCIATE_COOLDOWN_SECS, max 20/day.
+    {
+        let mut last = state.last_associate.lock().unwrap();
+        let mut count = state.associate_count_today.lock().unwrap();
+        let now = Instant::now();
+        if let Some(t) = *last {
+            if now.duration_since(t).as_secs() < ASSOCIATE_COOLDOWN_SECS {
+                return err(429, "too many requests");
+            }
+        }
+        if *count >= ASSOCIATE_DAILY_CAP {
+            return err(429, "daily pairing limit reached");
+        }
+        *last = Some(now);
+        *count += 1;
+    }
+
     let mut buf = Vec::new();
     if req.as_reader().read_to_end(&mut buf).is_err() {
         return err(400, "bad body");
@@ -293,7 +319,7 @@ fn handle_associate(
     });
 
     let id = state.new_id();
-    let (tx, rx) = oneshot::channel::<PairResult>();
+    let (tx, rx) = std::sync::mpsc::sync_channel::<PairResult>(1);
     state
         .pending
         .lock()
@@ -361,7 +387,7 @@ fn handle_credentials(
     }
 
     let id = state.new_id();
-    let (tx, rx) = oneshot::channel::<CredsResult>();
+    let (tx, rx) = std::sync::mpsc::sync_channel::<CredsResult>(1);
     state
         .pending
         .lock()
@@ -389,20 +415,8 @@ fn handle_credentials(
     }
 }
 
-fn wait_oneshot<T>(mut rx: oneshot::Receiver<T>, ttl: Duration) -> Option<T> {
-    let start = Instant::now();
-    loop {
-        match rx.try_recv() {
-            Ok(v) => return Some(v),
-            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {
-                if start.elapsed() >= ttl {
-                    return None;
-                }
-                std::thread::sleep(Duration::from_millis(100));
-            }
-            Err(_) => return None,
-        }
-    }
+fn wait_oneshot<T>(rx: std::sync::mpsc::Receiver<T>, ttl: Duration) -> Option<T> {
+    rx.recv_timeout(ttl).ok()
 }
 
 fn urldecode(s: &str) -> String {
