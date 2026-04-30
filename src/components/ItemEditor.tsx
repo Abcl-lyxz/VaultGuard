@@ -301,8 +301,22 @@ function PayloadFields({ payload, onChange, onCopy, onGenerate }: FieldsProps) {
           <SecretField label="Number" value={payload.number} onChange={v => onChange({ number: v })} onCopy={() => onCopy(payload.number, "Card number copied")} />
           <SecretField label="CVV" value={payload.cvv} onChange={v => onChange({ cvv: v })} onCopy={() => onCopy(payload.cvv, "CVV copied")} />
           <div className="row-2">
-            <div className="field"><label>Expiry month</label><input type="number" min={1} max={12} value={payload.expiry_month} onChange={e => onChange({ expiry_month: Number(e.target.value) })} /></div>
-            <div className="field"><label>Expiry year</label><input type="number" min={2000} max={2099} value={payload.expiry_year} onChange={e => onChange({ expiry_year: Number(e.target.value) })} /></div>
+            <div className="field">
+              <label htmlFor="card-exp-month">Expiry month</label>
+              <select id="card-exp-month" value={payload.expiry_month} onChange={e => onChange({ expiry_month: parseInt(e.target.value) })}>
+                {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                  <option key={m} value={m}>{String(m).padStart(2, "0")}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="card-exp-year">Expiry year</label>
+              <select id="card-exp-year" value={payload.expiry_year} onChange={e => onChange({ expiry_year: parseInt(e.target.value) })}>
+                {Array.from({ length: 15 }, (_, i) => new Date().getFullYear() + i).map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
           </div>
           <SectionTitle>Notes</SectionTitle>
           <TextField label="Notes" value={nullable(payload.notes)} onChange={v => onChange({ notes: orNull(v) })} textarea />
@@ -371,10 +385,25 @@ function PayloadFields({ payload, onChange, onCopy, onGenerate }: FieldsProps) {
           <TextField label="Label" value={payload.label} onChange={v => onChange({ label: v })} />
           <SecretField label="Secret (Base32)" value={payload.secret} onChange={v => onChange({ secret: v })} onCopy={() => onCopy(payload.secret, "TOTP secret copied")} />
           <TextField label="Issuer" value={nullable(payload.issuer)} onChange={v => onChange({ issuer: orNull(v) })} />
-          <div className="row-2">
-            <div className="field"><label>Algorithm</label><select value={payload.algorithm} onChange={e => onChange({ algorithm: e.target.value })}><option>SHA1</option><option>SHA256</option><option>SHA512</option></select></div>
-            <div className="field"><label>Digits</label><input type="number" min={6} max={8} value={payload.digits} onChange={e => onChange({ digits: Number(e.target.value) })} /></div>
-            <div className="field"><label>Period (s)</label><input type="number" min={10} max={120} value={payload.period} onChange={e => onChange({ period: Number(e.target.value) })} /></div>
+          <div className="row-3">
+            <div className="field">
+              <label htmlFor="totp-algo">Algorithm</label>
+              <select id="totp-algo" value={payload.algorithm} onChange={e => onChange({ algorithm: e.target.value })}>
+                <option>SHA1</option><option>SHA256</option><option>SHA512</option>
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="totp-digits">Digits</label>
+              <select id="totp-digits" value={payload.digits} onChange={e => onChange({ digits: parseInt(e.target.value) })}>
+                <option value={6}>6</option><option value={8}>8</option>
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="totp-period">Period (s)</label>
+              <select id="totp-period" value={payload.period} onChange={e => onChange({ period: parseInt(e.target.value) })}>
+                <option value={30}>30</option><option value={60}>60</option>
+              </select>
+            </div>
           </div>
           {payload.secret && payload.secret.trim().length >= 8 && (
             <div className="field">

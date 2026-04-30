@@ -1,6 +1,6 @@
-[package]
+﻿[package]
 name = "vaultguard"
-version = "0.3.0"
+version = "0.4.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -50,7 +50,7 @@ global-hotkey = "0.7"
 uiautomation = "0.20"
 windows = { version = "0.58", features = ["Win32_UI_WindowsAndMessaging"] }
 
-# Release profile — size + speed + hardening.
+# Release profile â€” size + speed + hardening.
 # - LTO removes dead code (smaller binary, fewer crypto leftovers in memory image).
 # - `panic = "abort"` prevents unwinding through crypto code, which could leave
 #   partially-zeroized buffers on the stack.

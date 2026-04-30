@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0] — 2026-04-30
+
+### UI — 3-pane layout redesign
+- **3-pane shell**: replaced 2-column layout with `NavSidebar (240px) | ItemListPanel (300px) | EditorPanel (flex)` — matches 1Password / Bitwarden conventions
+- **NavSidebar**: sectioned navigation with Library (All / Favorites / Unfiled), Folders (hover-reveal edit/delete), and Types (per-kind filter using `__kind__` prefix) — Settings + Lock in pinned footer
+- **ItemListPanel**: flat item list with inline search (Ctrl+F), item count, and New button; EmptyState for all empty conditions (no vault, no results, no filter match)
+- **Kind filter**: clicking a type in the sidebar filters the item list to that credential type
+- **Design tokens**: `tokens.css` now loaded globally — complete set of surface, border, accent, semantic, shadow, scrollbar, radius, and spacing tokens used by all layout components
+- **Removed dead CSS**: old `.app-layout`, `.sidebar`, `.item-list`, `.folder-pill` and related 2-pane classes removed from `App.css`
+- **TOTP layout fix**: algorithm / digits / period fields now in a proper 3-column `.row-3` grid instead of 2-column overflow
+
+### Bug fixes
+- **Create item bug — Prefs mismatch**: Rust `Prefs` struct was missing `theme` and `autofill_enabled` fields; added with `serde(default)` so existing `prefs.json` files deserialize cleanly
+- **Create item bug — NaN on numeric fields**: Card expiry month/year and TOTP digits/period changed from `<input type="number">` (which produced `NaN` on empty) to `<select>` dropdowns with safe fixed values — eliminates silent Rust u8/u16 deserialization failures
+
 ## [0.3.0] — 2026-04-28
 
 ### Extension — Fill reliability overhaul

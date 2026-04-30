@@ -3,12 +3,16 @@ use tauri::{AppHandle, Manager};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Prefs {
+    #[serde(default = "default_theme")]
+    pub theme: String,
     #[serde(default = "default_idle_minutes")]
     pub idle_minutes: u32,
     #[serde(default)]
     pub lock_on_blur: bool,
     #[serde(default = "default_clipboard_ttl_secs")]
     pub clipboard_ttl_secs: u32,
+    #[serde(default = "default_autofill_enabled")]
+    pub autofill_enabled: bool,
     #[serde(default = "default_autofill_hotkey")]
     pub autofill_hotkey: String,
 }
@@ -16,16 +20,20 @@ pub struct Prefs {
 impl Default for Prefs {
     fn default() -> Self {
         Self {
+            theme: default_theme(),
             idle_minutes: default_idle_minutes(),
             lock_on_blur: false,
             clipboard_ttl_secs: default_clipboard_ttl_secs(),
+            autofill_enabled: default_autofill_enabled(),
             autofill_hotkey: default_autofill_hotkey(),
         }
     }
 }
 
+fn default_theme() -> String { "system".into() }
 fn default_idle_minutes() -> u32 { 5 }
 fn default_clipboard_ttl_secs() -> u32 { 20 }
+fn default_autofill_enabled() -> bool { true }
 fn default_autofill_hotkey() -> String { "Ctrl+Shift+\\".into() }
 
 pub fn prefs_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
