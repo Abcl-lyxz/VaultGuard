@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Copy, Eye, EyeOff, Star, StarOff, Vault, Wand2 } from "lucide-react";
 import { api, type Folder as FolderT } from "../lib/ipc";
 import {
@@ -46,14 +46,22 @@ export function ItemEditor({ itemId, folders, onSaved, onDeleted, onCancel }: Pr
   const [showGen, setShowGen]       = useState(false);
   const [genTarget, setGenTarget]   = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const originalRef = useRef<Draft | null>(null);
 
   useEffect(() => {
-    if (itemId === null) { setDraft(null); return; }
-    if (itemId === "new") { setDraft(newDraft()); return; }
+    if (itemId === null) { setDraft(null); originalRef.current = null; return; }
+    if (itemId === "new") {
+      const d = newDraft();
+      setDraft(d);
+      originalRef.current = d;
+      return;
+    }
     (async () => {
       const item = await api.itemGet(itemId);
       if (!item) { setError("Item not found"); return; }
-      setDraft({ id: item.id, kind: item.kind, name: item.name, favorite: item.favorite, folder_id: item.folder_id, payload: item.payload });
+      const d: Draft = { id: item.id, kind: item.kind, name: item.name, favorite: item.favorite, folder_id: item.folder_id, payload: item.payload };
+      setDraft(d);
+      originalRef.current = d;
     })();
   }, [itemId]);
 
@@ -67,16 +75,24 @@ export function ItemEditor({ itemId, folders, onSaved, onDeleted, onCancel }: Pr
     );
   }
 
+  function isDirty() {
+    return draft !== null && JSON.stringify(draft) !== JSON.stringify(originalRef.current);
+  }
+
   function updatePayload(patch: Partial<ItemPayload>) {
     setDraft((d) => (d ? { ...d, payload: { ...d.payload, ...patch } as ItemPayload } : d));
   }
 
   function changeKind(kind: ItemKind) {
-    setDraft((d) => (d ? { ...d, kind, payload: emptyPayload(kind) } : d));
+    if (isDirty() && !window.confirm("Switch kind? Unsaved changes will be discarded.")) return;
+    const d: Draft = { id: null, kind, name: draft?.name ?? "", favorite: draft?.favorite ?? false, folder_id: draft?.folder_id ?? null, payload: emptyPayload(kind) };
+    originalRef.current = d;
+    setDraft(d);
   }
 
   async function save() {
     if (!draft) return;
+    if (!draft.name.trim()) { setError("Name is required."); return; }
     setBusy(true); setError(null);
     try {
       if (draft.id === null) {
@@ -84,10 +100,12 @@ export function ItemEditor({ itemId, folders, onSaved, onDeleted, onCancel }: Pr
       } else {
         await api.itemUpdate({ id: draft.id, kind: draft.kind, name: draft.name, favorite: draft.favorite, folder_id: draft.folder_id, payload: draft.payload });
       }
+      originalRef.current = { ...draft };
       toast("Saved successfully", "success");
       onSaved();
     } catch (e: any) {
-      setError(e?.message ?? String(e));
+      const msg = e?.message ?? e?.error ?? (typeof e === "string" ? e : null) ?? JSON.stringify(e);
+      setError(msg);
     } finally { setBusy(false); }
   }
 
@@ -99,7 +117,8 @@ export function ItemEditor({ itemId, folders, onSaved, onDeleted, onCancel }: Pr
       toast("Item deleted", "info");
       onDeleted();
     } catch (e: any) {
-      setError(e?.message ?? String(e));
+      const msg = e?.message ?? e?.error ?? (typeof e === "string" ? e : null) ?? JSON.stringify(e);
+      setError(msg);
     } finally { setBusy(false); setDeleteConfirm(false); }
   }
 
@@ -164,7 +183,7 @@ export function ItemEditor({ itemId, folders, onSaved, onDeleted, onCancel }: Pr
       {error && <p className="error">{error}</p>}
 
       <div className="editor-actions">
-        <button className="ghost" onClick={onCancel} disabled={busy}>Cancel</button>
+        <button className="ghost" onClick={() => { if (!isDirty() || window.confirm("Discard changes?")) onCancel(); }} disabled={busy}>Cancel</button>
         <span className="spacer" />
         {draft.id !== null && (
           <button className="danger" onClick={() => setDeleteConfirm(true)} disabled={busy} aria-label="Delete item">
@@ -218,11 +237,41 @@ function StrengthMeter({ value }: { value: string }) {
   );
 }
 
-function SecretField({ label, value, onChange, onCopy, onGenerate, showStrength }: {
+function SecretField({ label, value, onChange, onCopy, onGenerate, showStrength, requireReveal }: {
   label: string; value: string; onChange: (v: string) => void;
   onCopy?: () => void; onGenerate?: () => void; showStrength?: boolean;
+  requireReveal?: boolean;
 }) {
   const [show, setShow] = useState(false);
+  const [revealSecs, setRevealSecs] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function startReveal() {
+    setShow(true);
+    setRevealSecs(10);
+    timerRef.current = setInterval(() => {
+      setRevealSecs(s => {
+        if (s <= 1) {
+          clearInterval(timerRef.current!);
+          timerRef.current = null;
+          setShow(false);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+  }
+
+  function hideNow() {
+    setShow(false);
+    setRevealSecs(0);
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+  }
+
+  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
+
+  const copyEnabled = !requireReveal || (show && revealSecs > 0);
+
   return (
     <div className="field">
       <span>{label}</span>
@@ -233,11 +282,23 @@ function SecretField({ label, value, onChange, onCopy, onGenerate, showStrength 
           onChange={(e) => onChange(e.target.value)}
           aria-label={label}
         />
-        <button type="button" className="btn-icon-sm" title={show ? "Hide" : "Show"} aria-label={show ? "Hide value" : "Show value"} onClick={() => setShow(s => !s)}>
-          {show ? <EyeOff size={13} /> : <Eye size={13} />}
-        </button>
+        {requireReveal ? (
+          show ? (
+            <button type="button" className="btn-icon-sm" title={`Hide (${revealSecs}s)`} aria-label="Hide value" onClick={hideNow}>
+              <EyeOff size={13} />
+            </button>
+          ) : (
+            <button type="button" className="btn-icon-sm" title="Reveal" aria-label="Reveal value" onClick={startReveal}>
+              <Eye size={13} />
+            </button>
+          )
+        ) : (
+          <button type="button" className="btn-icon-sm" title={show ? "Hide" : "Show"} aria-label={show ? "Hide value" : "Show value"} onClick={() => setShow(s => !s)}>
+            {show ? <EyeOff size={13} /> : <Eye size={13} />}
+          </button>
+        )}
         {onCopy && (
-          <button type="button" className="btn-icon-sm" title="Copy" aria-label={`Copy ${label}`} onClick={onCopy}>
+          <button type="button" className="btn-icon-sm" title={copyEnabled ? "Copy" : "Reveal first"} aria-label={`Copy ${label}`} onClick={onCopy} disabled={!copyEnabled}>
             <Copy size={13} />
           </button>
         )}
@@ -298,8 +359,8 @@ function PayloadFields({ payload, onChange, onCopy, onGenerate }: FieldsProps) {
         <div className="editor-section">
           <SectionTitle>Card details</SectionTitle>
           <TextField label="Cardholder" value={payload.cardholder} onChange={v => onChange({ cardholder: v })} />
-          <SecretField label="Number" value={payload.number} onChange={v => onChange({ number: v })} onCopy={() => onCopy(payload.number, "Card number copied")} />
-          <SecretField label="CVV" value={payload.cvv} onChange={v => onChange({ cvv: v })} onCopy={() => onCopy(payload.cvv, "CVV copied")} />
+          <SecretField label="Number" value={payload.number} onChange={v => onChange({ number: v })} onCopy={() => onCopy(payload.number, "Card number copied")} requireReveal />
+          <SecretField label="CVV" value={payload.cvv} onChange={v => onChange({ cvv: v })} onCopy={() => onCopy(payload.cvv, "CVV copied")} requireReveal />
           <div className="row-2">
             <div className="field">
               <label htmlFor="card-exp-month">Expiry month</label>
@@ -335,7 +396,7 @@ function PayloadFields({ payload, onChange, onCopy, onGenerate }: FieldsProps) {
         <div className="editor-section">
           <SectionTitle>Wallet details</SectionTitle>
           <TextField label="Wallet name" value={payload.wallet_name} onChange={v => onChange({ wallet_name: v })} />
-          <SecretField label="Seed phrase" value={payload.seed_phrase} onChange={v => onChange({ seed_phrase: v })} onCopy={() => onCopy(payload.seed_phrase, "Seed phrase copied")} />
+          <SecretField label="Seed phrase" value={payload.seed_phrase} onChange={v => onChange({ seed_phrase: v })} onCopy={() => onCopy(payload.seed_phrase, "Seed phrase copied")} requireReveal />
           <TextField label="Chain" value={nullable(payload.chain)} onChange={v => onChange({ chain: orNull(v) })} />
           <TextField label="Address" value={nullable(payload.address)} onChange={v => onChange({ address: orNull(v) })} />
           <SectionTitle>Notes</SectionTitle>
@@ -362,7 +423,7 @@ function PayloadFields({ payload, onChange, onCopy, onGenerate }: FieldsProps) {
         <div className="editor-section">
           <SectionTitle>SSH key</SectionTitle>
           <TextField label="Label" value={payload.label} onChange={v => onChange({ label: v })} />
-          <SecretField label="Private key" value={payload.private_key} onChange={v => onChange({ private_key: v })} onCopy={() => onCopy(payload.private_key, "Private key copied")} />
+          <SecretField label="Private key" value={payload.private_key} onChange={v => onChange({ private_key: v })} onCopy={() => onCopy(payload.private_key, "Private key copied")} requireReveal />
           <TextField label="Public key" value={nullable(payload.public_key)} onChange={v => onChange({ public_key: orNull(v) })} textarea />
           <SecretField label="Passphrase" value={nullable(payload.passphrase)} onChange={v => onChange({ passphrase: orNull(v) })} />
         </div>

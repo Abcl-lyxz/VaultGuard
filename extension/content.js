@@ -378,7 +378,17 @@ window.__vgLoaded = true;
     <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
   </svg>`;
 
+  let fillInFlight = false;
+
   async function handleFillRequest(badge) {
+    if (fillInFlight) return;
+    fillInFlight = true;
+    if (badge) badge.style.opacity = "0.5";
+    try { await _handleFillRequest(badge); }
+    finally { fillInFlight = false; if (badge) badge.style.opacity = ""; }
+  }
+
+  async function _handleFillRequest(badge) {
     // Always find pair fresh at click time — fixes orphan-node stale closure bug
     let pair = findLoginPair();
 

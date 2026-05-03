@@ -25,7 +25,7 @@ use std::time::{Duration, Instant};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as B64, Engine as _};
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tiny_http::{Header, Method, Response, Server};
 use url::Url;
 
@@ -75,7 +75,8 @@ pub struct ApprovedCred {
 
 struct Pending {
     pair: HashMap<String, (std::sync::mpsc::SyncSender<PairResult>, Instant)>,
-    creds: HashMap<String, (std::sync::mpsc::SyncSender<CredsResult>, Vec<CredsCandidate>, Instant)>,
+    // value: (tx, candidates, created_at, token, origin)
+    creds: HashMap<String, (std::sync::mpsc::SyncSender<CredsResult>, Vec<CredsCandidate>, Instant, String, String)>,
 }
 
 impl Pending {
@@ -88,7 +89,7 @@ impl Pending {
     fn gc(&mut self) {
         let now = Instant::now();
         self.pair.retain(|_, (_, t)| now.duration_since(*t) < APPROVAL_TTL);
-        self.creds.retain(|_, (_, _, t)| now.duration_since(*t) < APPROVAL_TTL);
+        self.creds.retain(|_, (_, _, t, _, _)| now.duration_since(*t) < APPROVAL_TTL);
     }
 }
 
@@ -158,7 +159,7 @@ impl BridgeState {
         resolve_item: impl FnOnce(&str) -> Option<ApprovedCred>,
     ) -> Result<(), String> {
         let mut p = self.pending.lock().unwrap();
-        let (tx, candidates, _) = p.creds.remove(id).ok_or("no such creds request")?;
+        let (tx, candidates, _, _, _) = p.creds.remove(id).ok_or("no such creds request")?;
         drop(p);
         let result = if !allow {
             CredsResult::Denied
@@ -335,6 +336,10 @@ fn handle_associate(
         state.pending.lock().unwrap().pair.remove(&id);
         return err(503, "desktop app not ready");
     }
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.unminimize();
+        let _ = win.set_focus();
+    }
 
     // Block this worker thread until the FE resolves. TTL + denial safeguard.
     let res = wait_oneshot(rx, APPROVAL_TTL);
@@ -386,6 +391,19 @@ fn handle_credentials(
         return json_response(200, &CredsResp { items: vec![] });
     }
 
+    // Dedup: reject if there's already a pending request from the same token+origin
+    // within the last 1.5 s to prevent stacking from rapid extension clicks.
+    const DEDUP_WINDOW: Duration = Duration::from_millis(1500);
+    {
+        let now = Instant::now();
+        let pending = state.pending.lock().unwrap();
+        if pending.creds.values().any(|(_, _, t, tok, orig)| {
+            tok == &token && orig == &origin && now.duration_since(*t) < DEDUP_WINDOW
+        }) {
+            return err(429, "duplicate_request");
+        }
+    }
+
     let id = state.new_id();
     let (tx, rx) = std::sync::mpsc::sync_channel::<CredsResult>(1);
     state
@@ -393,7 +411,7 @@ fn handle_credentials(
         .lock()
         .unwrap()
         .creds
-        .insert(id.clone(), (tx, candidates.clone(), Instant::now()));
+        .insert(id.clone(), (tx, candidates.clone(), Instant::now(), token, origin.clone()));
 
     let payload = CredsRequest {
         request_id: id.clone(),
@@ -403,6 +421,10 @@ fn handle_credentials(
     if app.emit("bridge:creds_request", &payload).is_err() {
         state.pending.lock().unwrap().creds.remove(&id);
         return err(503, "desktop app not ready");
+    }
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.unminimize();
+        let _ = win.set_focus();
     }
 
     match wait_oneshot(rx, APPROVAL_TTL) {

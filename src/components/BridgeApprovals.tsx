@@ -4,18 +4,24 @@ import { api, type CredsRequest, type PairRequest } from "../lib/ipc";
 import { Modal } from "./ui/Modal";
 
 export function BridgeApprovals() {
-  const [pair, setPair]         = useState<PairRequest | null>(null);
-  const [creds, setCreds]       = useState<CredsRequest | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [pairQueue, setPairQueue]   = useState<PairRequest[]>([]);
+  const [credsQueue, setCredsQueue] = useState<CredsRequest[]>([]);
+  const [selected, setSelected]     = useState<string | null>(null);
+
+  const pair  = pairQueue[0]  ?? null;
+  const creds = credsQueue[0] ?? null;
 
   useEffect(() => {
     const unlistens: Array<() => void> = [];
-    listen<PairRequest>("bridge:pair_request", (e) => setPair(e.payload)).then(
-      (u) => unlistens.push(u),
-    );
+    listen<PairRequest>("bridge:pair_request", (e) => {
+      setPairQueue(q => q.some(p => p.request_id === e.payload.request_id) ? q : [...q, e.payload]);
+    }).then((u) => unlistens.push(u));
     listen<CredsRequest>("bridge:creds_request", (e) => {
-      setCreds(e.payload);
-      setSelected(e.payload.candidates[0]?.id ?? null);
+      setCredsQueue(q => {
+        if (q.some(p => p.request_id === e.payload.request_id)) return q;
+        if (q.length === 0) setSelected(e.payload.candidates[0]?.id ?? null);
+        return [...q, e.payload];
+      });
     }).then((u) => unlistens.push(u));
     return () => { for (const u of unlistens) u(); };
   }, []);
@@ -23,13 +29,19 @@ export function BridgeApprovals() {
   async function decidePair(allow: boolean) {
     if (!pair) return;
     try { await api.bridgePairComplete(pair.request_id, allow); }
-    finally { setPair(null); }
+    finally { setPairQueue(q => q.slice(1)); }
   }
 
   async function decideCreds(allow: boolean) {
     if (!creds) return;
     try { await api.bridgeCredsComplete(creds.request_id, allow, allow ? selected : null); }
-    finally { setCreds(null); setSelected(null); }
+    finally {
+      setCredsQueue(q => {
+        const next = q.slice(1);
+        setSelected(next[0]?.candidates[0]?.id ?? null);
+        return next;
+      });
+    }
   }
 
   return (
@@ -46,7 +58,7 @@ export function BridgeApprovals() {
         </div>
       </Modal>
 
-      <Modal open={!!creds} onClose={() => decideCreds(false)} title="Send credentials?">
+      <Modal open={!!creds} onClose={() => decideCreds(false)} title={credsQueue.length > 1 ? `Send credentials? (${credsQueue.length} pending)` : "Send credentials?"}>
         <p className="modal-subtitle">
           The browser is requesting a login for{" "}
           <strong style={{ color: "var(--text-primary)" }}>{creds?.origin}</strong>.

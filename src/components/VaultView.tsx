@@ -176,11 +176,15 @@ export function VaultView({ onLock }: Props) {
         </Modal>
       )}
 
-      {deleteFolderConfirm && (
+      {deleteFolderConfirm && (() => {
+        const folderItemCount = items.filter(i => i.folder_id === deleteFolderConfirm.id).length;
+        return (
         <Modal open onClose={() => setDeleteFolderConfirm(null)} title="Delete folder">
           <p className="modal-subtitle">
-            Delete <strong style={{ color: "var(--text-primary)" }}>{deleteFolderConfirm.name}</strong>?
-            Items inside will become unfiled.
+            Delete <strong style={{ color: "var(--text-primary)" }}>{deleteFolderConfirm.name}</strong>?{" "}
+            {folderItemCount > 0
+              ? <>{folderItemCount} item{folderItemCount !== 1 ? "s" : ""} will become unfiled.</>
+              : "The folder is empty."}
           </p>
           <div className="modal-actions">
             <button className="ghost" onClick={() => setDeleteFolderConfirm(null)}>Cancel</button>
@@ -192,7 +196,8 @@ export function VaultView({ onLock }: Props) {
             }}>Delete</button>
           </div>
         </Modal>
-      )}
+        );
+      })()}
 
       <BridgeApprovals />
       <AutofillPicker />

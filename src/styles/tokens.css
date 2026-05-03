@@ -137,4 +137,13 @@
   --z-modal:    100;
   --z-toast:    200;
   --z-palette:  300;
+
+  /* v0.4.0→v0.4.1 legacy aliases — bridge stale App.css refs until full migration */
+  --bg-elevated: var(--bg-card);
+  --bg-surface:  var(--bg-card);
+  --border-subtle: var(--border-sub);
+  --danger-muted:  var(--danger-subtle);
+  --success-muted: var(--success-subtle);
+  --accent-muted:  var(--accent-subtle);
+  --r: var(--r-md);
 }

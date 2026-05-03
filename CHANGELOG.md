@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.4.1] — 2026-05-03
+
+### Bug fixes
+- **White input fields**: `tokens.css` v0.4.0 renamed `--bg-elevated/--bg-surface/--border-subtle/--danger-muted/--success-muted/--accent-muted/--r` but `App.css` still referenced the old names, causing browsers to fall back to white for all inputs, selects, modals, toasts, and secret-row buttons. Legacy alias variables now bridge the gap.
+- **Chromium autofill highlight**: added `:-webkit-autofill` override so the browser's yellow autofill paint is replaced with the correct dark surface colour.
+- **Create item — silent error**: `save()` caught Tauri `CmdError` objects but read `.message` instead of serialising the full object, showing `[object Object]` (perceived as a silent failure). Error formatter now extracts `.message ?? .error ?? JSON.stringify(e)` and shows it in both the inline error block and a toast.
+
+### UX hardening — idiot-proofing
+- **Sensitive-data reveal gate**: card number, CVV, crypto wallet seed phrase, and SSH private key fields now require an explicit **Reveal** click before Copy is enabled. After revealing, the value auto-hides after 10 seconds. Prevents shoulder-surfing and accidental clipboard exposure.
+- **Unsaved-changes guard**: switching item kind and clicking Cancel now show a confirmation dialog if the form has been modified, preventing silent data loss.
+- **Folder delete impact preview**: the delete confirmation modal now shows how many items are inside the folder and that they will become unfiled (or "The folder is empty" if none).
+- **Save button name guard**: `save()` now validates `name.trim()` at the function boundary (in addition to the existing button-disabled check) and shows a clear inline error.
+
+### Autofill single-flight (extension → desktop)
+- **Dedup at Rust layer**: `handle_credentials` now rejects duplicate requests from the same token+origin within 1.5 s with HTTP 429, preventing rapid extension clicks from stacking pending approvals.
+- **Queue in frontend**: `BridgeApprovals` converts its single-slot `creds` and `pair` state into FIFO queues; each approval/denial shifts the queue and surfaces the next request. Modal title shows "(N pending)" when multiple requests are queued.
+- **Window focus**: the Tauri main window is unminimised and focused when a `bridge:pair_request` or `bridge:creds_request` is emitted, so the approval prompt surfaces immediately.
+- **Extension in-flight latch**: `content.js::handleFillRequest` sets an `fillInFlight` flag for the duration of the request and ignores further badge clicks until resolved; the badge dims while in-flight.
+
+### Version
+- Bumped to `0.4.1` in `package.json`, `Cargo.toml`, and `tauri.conf.json`.
+
 ## [0.4.0] — 2026-04-30
 
 ### UI — 3-pane layout redesign
