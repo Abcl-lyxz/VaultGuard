@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "vaultguard"
 version = "0.4.1"
 description = "A Tauri App"
