@@ -52,6 +52,8 @@ pub fn run() {
             ipc::vault_import,
             ipc::bridge_pair_complete,
             ipc::bridge_creds_complete,
+            ipc::bridge_save_complete,
+            ipc::bridge_update_complete,
             ipc::autofill_fill,
             ipc::prefs_get,
             ipc::prefs_set,

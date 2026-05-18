@@ -1,15 +1,20 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { api, type CredsRequest, type PairRequest } from "../lib/ipc";
+import { api, type CredsRequest, type PairRequest, type SaveRequest, type UpdateRequest } from "../lib/ipc";
 import { Modal } from "./ui/Modal";
 
 export function BridgeApprovals() {
-  const [pairQueue, setPairQueue]   = useState<PairRequest[]>([]);
-  const [credsQueue, setCredsQueue] = useState<CredsRequest[]>([]);
-  const [selected, setSelected]     = useState<string | null>(null);
+  const [pairQueue, setPairQueue]     = useState<PairRequest[]>([]);
+  const [credsQueue, setCredsQueue]   = useState<CredsRequest[]>([]);
+  const [saveQueue, setSaveQueue]     = useState<SaveRequest[]>([]);
+  const [updateQueue, setUpdateQueue] = useState<UpdateRequest[]>([]);
+  const [selected, setSelected]       = useState<string | null>(null);
+  const [saveName, setSaveName]       = useState<string>("");
 
-  const pair  = pairQueue[0]  ?? null;
-  const creds = credsQueue[0] ?? null;
+  const pair    = pairQueue[0]    ?? null;
+  const creds   = credsQueue[0]   ?? null;
+  const save    = saveQueue[0]    ?? null;
+  const upd     = updateQueue[0]  ?? null;
 
   useEffect(() => {
     const unlistens: Array<() => void> = [];
@@ -22,6 +27,25 @@ export function BridgeApprovals() {
         if (q.length === 0) setSelected(e.payload.candidates[0]?.id ?? null);
         return [...q, e.payload];
       });
+    }).then((u) => unlistens.push(u));
+    listen<SaveRequest>("bridge:save_request", (e) => {
+      setSaveQueue(q => {
+        if (q.some(p => p.request_id === e.payload.request_id)) return q;
+        if (q.length === 0) setSaveName(e.payload.host);
+        return [...q, e.payload];
+      });
+    }).then((u) => unlistens.push(u));
+    listen<UpdateRequest>("bridge:update_request", async (e) => {
+      // Hydrate name + username from the vault on receipt — the bridge sends item_id only.
+      let payload = e.payload;
+      try {
+        const item = await api.itemGet(payload.item_id);
+        if (item && item.kind === "login") {
+          const pl: any = item.payload;
+          payload = { ...payload, item_name: item.name, username: pl.username ?? "" };
+        }
+      } catch {}
+      setUpdateQueue(q => q.some(p => p.request_id === payload.request_id) ? q : [...q, payload]);
     }).then((u) => unlistens.push(u));
     return () => { for (const u of unlistens) u(); };
   }, []);
@@ -42,6 +66,25 @@ export function BridgeApprovals() {
         return next;
       });
     }
+  }
+
+  async function decideSave(allow: boolean) {
+    if (!save) return;
+    const nm = (saveName || save.host).trim() || save.host;
+    try { await api.bridgeSaveComplete(save.request_id, allow, allow ? nm : null); }
+    finally {
+      setSaveQueue(q => {
+        const next = q.slice(1);
+        setSaveName(next[0]?.host ?? "");
+        return next;
+      });
+    }
+  }
+
+  async function decideUpdate(allow: boolean) {
+    if (!upd) return;
+    try { await api.bridgeUpdateComplete(upd.request_id, allow); }
+    finally { setUpdateQueue(q => q.slice(1)); }
   }
 
   return (
@@ -96,6 +139,41 @@ export function BridgeApprovals() {
           >
             Send
           </button>
+        </div>
+      </Modal>
+
+      <Modal open={!!save} onClose={() => decideSave(false)} title={saveQueue.length > 1 ? `Save new login? (${saveQueue.length} pending)` : "Save new login?"}>
+        <p className="modal-subtitle">
+          The browser captured a sign-in for{" "}
+          <strong style={{ color: "var(--text-primary)" }}>{save?.host}</strong>{" "}
+          (user <strong style={{ color: "var(--text-primary)" }}>{save?.username}</strong>).
+          Add it to your vault?
+        </p>
+        <div className="field" style={{ marginTop: 8 }}>
+          <label htmlFor="vg-save-name">Item name</label>
+          <input
+            id="vg-save-name"
+            value={saveName}
+            onChange={(e) => setSaveName(e.target.value)}
+            placeholder={save?.host ?? ""}
+          />
+        </div>
+        <div className="modal-actions">
+          <button className="ghost" onClick={() => decideSave(false)}>Not now</button>
+          <button onClick={() => decideSave(true)} disabled={!(saveName.trim() || save?.host)}>Save</button>
+        </div>
+      </Modal>
+
+      <Modal open={!!upd} onClose={() => decideUpdate(false)} title="Update password?">
+        <p className="modal-subtitle">
+          The browser saw a new password for{" "}
+          <strong style={{ color: "var(--text-primary)" }}>{upd?.item_name || "this item"}</strong>
+          {upd?.username ? <> (user <strong style={{ color: "var(--text-primary)" }}>{upd.username}</strong>)</> : null}.
+          Replace the stored password in your vault?
+        </p>
+        <div className="modal-actions">
+          <button className="ghost" onClick={() => decideUpdate(false)}>Keep old</button>
+          <button onClick={() => decideUpdate(true)}>Update</button>
         </div>
       </Modal>
     </>

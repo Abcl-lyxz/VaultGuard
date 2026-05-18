@@ -1,4 +1,4 @@
-// VaultGuard MV3 service worker v0.3.0 — talks to the desktop bridge over loopback HTTP.
+// VaultGuard MV3 service worker v0.5.0 — talks to the desktop bridge over loopback HTTP.
 // Stores the per-extension Bearer token in chrome.storage.local. Pairing happens
 // once via the popup; thereafter the worker forwards credential requests from
 // content scripts to the desktop, which prompts the user for per-request approval.
@@ -31,21 +31,58 @@ async function pair() {
   return j.token;
 }
 
-async function fetchCreds(origin) {
+async function authedFetch(path, init = {}) {
   const token = await getToken();
   if (!token) throw new Error('not paired');
-  const url = `${BRIDGE}/v1/credentials?origin=${encodeURIComponent(origin)}`;
-  const r = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (r.status === 401) {
-    await clearToken();
-    throw new Error('token rejected — please pair again');
-  }
+  const headers = Object.assign({ Authorization: `Bearer ${token}` }, init.headers || {});
+  const r = await fetch(`${BRIDGE}${path}`, Object.assign({}, init, { headers }));
+  if (r.status === 401) { await clearToken(); throw new Error('token rejected — please pair again'); }
+  return r;
+}
+
+async function fetchCreds(origin) {
+  const r = await authedFetch(`/v1/credentials?origin=${encodeURIComponent(origin)}`);
   if (r.status === 403) throw new Error('denied by user');
   if (r.status === 408) throw new Error('approval timed out');
   if (!r.ok) throw new Error(`bridge error ${r.status}`);
   return r.json();
+}
+
+async function fetchTotp(itemId) {
+  const r = await authedFetch(`/v1/totp?item_id=${encodeURIComponent(itemId)}`);
+  if (r.status === 404) return null; // item has no totp_secret
+  if (!r.ok) throw new Error(`totp ${r.status}`);
+  return r.json();
+}
+
+async function saveNew(origin, username, password) {
+  const r = await authedFetch('/v1/save_request', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ origin, username, password }),
+  });
+  if (r.status === 409) {
+    // host+username already exists — caller should switch to update flow
+    const j = await r.json().catch(() => ({}));
+    return { ok: false, exists: true, item_id: j.item_id || null, item_name: j.item_name || '' };
+  }
+  if (r.status === 403) return { ok: false, error: 'denied' };
+  if (r.status === 408) return { ok: false, error: 'timeout' };
+  if (!r.ok) return { ok: false, error: `bridge ${r.status}` };
+  const j = await r.json();
+  return { ok: true, item_id: j.item_id };
+}
+
+async function updatePassword(itemId, newPassword) {
+  const r = await authedFetch('/v1/update_request', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ item_id: itemId, new_password: newPassword }),
+  });
+  if (r.status === 403) return { ok: false, error: 'denied' };
+  if (r.status === 408) return { ok: false, error: 'timeout' };
+  if (!r.ok) return { ok: false, error: `bridge ${r.status}` };
+  return { ok: true };
 }
 
 // ── Helper: send fill_now to active tab ──────────────────────────────────────
@@ -82,6 +119,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       } else if (msg?.type === 'vg:fetch_creds') {
         const j = await fetchCreds(msg.origin);
         sendResponse({ ok: true, items: j.items || [] });
+      } else if (msg?.type === 'vg:totp_fetch') {
+        const j = await fetchTotp(msg.item_id);
+        sendResponse({ ok: true, totp: j });
+      } else if (msg?.type === 'vg:save_new') {
+        const r = await saveNew(msg.origin, msg.username, msg.password);
+        sendResponse(r);
+      } else if (msg?.type === 'vg:update_password') {
+        const r = await updatePassword(msg.item_id, msg.new_password);
+        sendResponse(r);
       } else if (msg?.type === 'vg:fill_now') {
         // From popup: forward to active tab content script
         const result = await triggerFillOnActiveTab();

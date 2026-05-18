@@ -1,6 +1,7 @@
-// VaultGuard content script v0.3.0
+// VaultGuard content script v0.5.0
 // Detects login forms, injects a badge over the password field, fills credentials
-// from the desktop app on click. Full rewrite fixing orphan-node stale closure bug.
+// from the desktop app on click. Now also: fills TOTP codes if the saved login has
+// a totp_secret, and captures form submissions to offer save-new / update-password.
 
 // Guard: run once per frame
 if (window.__vgLoaded) {
@@ -445,28 +446,170 @@ window.__vgLoaded = true;
     }
 
     if (items.length === 1) {
-      const cred = items[0];
-      let username = cred.username;
-      // Multi-step: if pw-only and cached username, prefer cache unless cred has username
-      if (pair.user === null) {
-        const cached = sessionStorage.getItem('vg_cached_username');
-        if (cached && !username) username = cached;
-      }
-      await fillPair(pair, username, cred.password);
-      badgeSuccessFeedback(badge);
+      await applyCred(pair, items[0], badge);
     } else {
       // Multiple credentials — show chooser
-      showChooser(items, async (cred) => {
-        let username = cred.username;
-        if (pair.user === null) {
-          const cached = sessionStorage.getItem('vg_cached_username');
-          if (cached && !username) username = cached;
-        }
-        await fillPair(pair, username, cred.password);
-        badgeSuccessFeedback(badge);
-      });
+      showChooser(items, async (cred) => { await applyCred(pair, cred, badge); });
     }
   }
+
+  async function applyCred(pair, cred, badge) {
+    let username = cred.username;
+    if (pair.user === null) {
+      const cached = sessionStorage.getItem('vg_cached_username');
+      if (cached && !username) username = cached;
+    }
+    await fillPair(pair, username, cred.password);
+    badgeSuccessFeedback(badge);
+    rememberLastFill(cred, username);
+    if (cred.has_totp && cred.id) {
+      await fillTotpIfPresent(cred.id);
+    }
+  }
+
+  // ── TOTP field detector ───────────────────────────────────────────────────
+  function findTotpInput(root = document) {
+    // Strong signal first: explicit autocomplete=one-time-code
+    const ac = root.querySelector('input[autocomplete="one-time-code"]');
+    if (ac && isVisible(ac)) return ac;
+    // Numeric / pattern + short maxlength, with otp-like hints
+    const hint = /code|otp|2fa|token|verif|auth|onetime|one-time/i;
+    const candidates = Array.from(root.querySelectorAll('input')).filter(isVisible);
+    for (const el of candidates) {
+      if (el.type === 'password') continue;
+      const t = (el.type || '').toLowerCase();
+      if (!['text', 'tel', 'number', ''].includes(t)) continue;
+      const ml = parseInt(el.getAttribute('maxlength') || '0', 10);
+      const im = (el.getAttribute('inputmode') || '').toLowerCase();
+      const pattern = el.getAttribute('pattern') || '';
+      const attrs = [el.name, el.id, el.getAttribute('aria-label'), el.placeholder,
+                     el.getAttribute('autocomplete')].filter(Boolean).join(' ');
+      const isOtpAttr = hint.test(attrs);
+      const isShortNumeric =
+        (ml > 0 && ml <= 8) || im === 'numeric' || /^\d+\$/.test(pattern) || /[0-9]/.test(pattern);
+      if (isOtpAttr && isShortNumeric) return el;
+      if (isOtpAttr && ml === 0 && !im) {
+        // weaker fallback: otp-labeled field with no length constraint
+        return el;
+      }
+    }
+    return null;
+  }
+
+  async function fillTotpIfPresent(itemId) {
+    const otp = findTotpInput();
+    if (!otp) return; // no field visible right now; that's OK
+    let resp;
+    try {
+      resp = await chrome.runtime.sendMessage({ type: 'vg:totp_fetch', item_id: itemId });
+    } catch { return; }
+    if (!resp?.ok || !resp.totp?.code) return;
+    otp.focus();
+    setNativeValue(otp, resp.totp.code);
+    dispatchInputEvents(otp, resp.totp.code, { skipBlur: false });
+    showToast('VaultGuard: 2FA code filled');
+  }
+
+  // ── Submit capture for save-new / update-password ─────────────────────────
+  let lastFill = null;       // { origin, item_id, username, password, ts }
+  let lastSubmitKey = null;  // dedup repeated submissions of the same creds
+
+  function rememberLastFill(cred, username) {
+    lastFill = {
+      origin: location.origin,
+      item_id: cred.id || null,
+      username: username || '',
+      password: cred.password || '',
+      ts: Date.now(),
+    };
+  }
+
+  function snapshotLogin(form) {
+    const pwInputs = collectPasswordInputs(form).filter(isVisible);
+    if (pwInputs.length !== 1) return null;          // skip signup / multi-pw
+    if (form.querySelector && form.querySelector('input[autocomplete="new-password"]')) return null;
+    const pw = pwInputs[0];
+    const password = pw.value || '';
+    if (!password) return null;
+
+    const allInputs = Array.from(form.querySelectorAll('input:not([disabled])')).filter(isVisible);
+    const pwIdx = allInputs.indexOf(pw);
+    let userField = form.querySelector(
+      'input[autocomplete="username"], input[autocomplete="email"], input[autocomplete="tel"]'
+    );
+    if (!userField || !isVisible(userField) || userField === pw) {
+      for (let i = pwIdx - 1; i >= 0; i--) {
+        const t = (allInputs[i].type || '').toLowerCase();
+        if (['text', 'email', 'tel', ''].includes(t)) { userField = allInputs[i]; break; }
+      }
+    }
+    const username = (userField?.value?.trim()) || sessionStorage.getItem('vg_cached_username') || '';
+    if (!username) return null;
+    return { username, password };
+  }
+
+  async function offerSaveOrUpdate(snap) {
+    const origin = location.origin;
+    const key = origin + '|' + snap.username + '|' + snap.password;
+    if (key === lastSubmitKey) return;
+    lastSubmitKey = key;
+
+    // If we just filled these exact creds, nothing to save.
+    if (lastFill && lastFill.origin === origin &&
+        lastFill.username === snap.username && lastFill.password === snap.password) {
+      return;
+    }
+
+    // Same item, password changed → update.
+    if (lastFill && lastFill.origin === origin && lastFill.username === snap.username &&
+        lastFill.item_id && lastFill.password !== snap.password) {
+      try {
+        await chrome.runtime.sendMessage({
+          type: 'vg:update_password', item_id: lastFill.item_id, new_password: snap.password,
+        });
+      } catch {}
+      return;
+    }
+
+    // Otherwise try to save. The bridge replies 409 with item_id if it already
+    // exists — fall back to update flow in that case.
+    let r;
+    try {
+      r = await chrome.runtime.sendMessage({
+        type: 'vg:save_new', origin, username: snap.username, password: snap.password,
+      });
+    } catch { return; }
+    if (!r) return;
+    if (r.exists && r.item_id) {
+      try {
+        await chrome.runtime.sendMessage({
+          type: 'vg:update_password', item_id: r.item_id, new_password: snap.password,
+        });
+      } catch {}
+    }
+  }
+
+  // Capture-phase listener so we see submits even when the page calls
+  // stopPropagation. Also handle SPAs that block submit and use Enter/button click.
+  document.addEventListener('submit', (e) => {
+    const form = e.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    const snap = snapshotLogin(form);
+    if (snap) offerSaveOrUpdate(snap);
+  }, true);
+
+  // SPA fallback: when password field is connected and user presses Enter inside it,
+  // snapshot from the nearest form (or the whole document if formless).
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const t = e.target;
+    if (!(t instanceof HTMLInputElement)) return;
+    if (t.type !== 'password' && t.getAttribute('autocomplete') !== 'username' &&
+        t.type !== 'email' && t.type !== 'text') return;
+    const form = t.form || document;
+    const snap = snapshotLogin(form);
+    if (snap) offerSaveOrUpdate(snap);
+  }, true);
 
   function injectBadge(pair) {
     if (document.getElementById(BADGE_ID)) return;

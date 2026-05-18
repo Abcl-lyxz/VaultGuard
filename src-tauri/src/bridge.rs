@@ -11,10 +11,12 @@
 //! - Matches are done by URL host (no silent wildcard). Only `Login` items
 //!   with non-empty `url` are returned.
 //!
-//! The FE listens for two Tauri events:
-//! - `bridge:pair_request`   payload: `PairRequest`
-//! - `bridge:creds_request`  payload: `CredsRequest`
-//! and calls back via `bridge_pair_complete` / `bridge_creds_complete`.
+//! The FE listens for four Tauri events:
+//! - `bridge:pair_request`    payload: `PairRequest`
+//! - `bridge:creds_request`   payload: `CredsRequest`
+//! - `bridge:save_request`    payload: `SaveRequest`     (new in v0.5.0)
+//! - `bridge:update_request`  payload: `UpdateRequest`   (new in v0.5.0)
+//! and calls back via the matching `bridge_*_complete` IPC commands.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -69,14 +71,64 @@ enum CredsResult {
 
 #[derive(Clone, Serialize)]
 pub struct ApprovedCred {
+    pub id: String,
     pub username: String,
     pub password: String,
+    pub has_totp: bool,
+}
+
+/// TOTP code surfaced to the extension. Secret never leaves the desktop.
+#[derive(Clone, Serialize)]
+pub struct TotpResp {
+    pub code: String,
+    pub remaining: u64,
+    pub period: u64,
+}
+
+/// Emitted to FE when the extension wants to save a brand-new login.
+#[derive(Clone, Serialize)]
+pub struct SaveRequest {
+    pub request_id: String,
+    pub origin: String,
+    pub host: String,
+    pub username: String,
+}
+
+/// Emitted to FE when the extension wants to update an existing login's password.
+#[derive(Clone, Serialize)]
+pub struct UpdateRequest {
+    pub request_id: String,
+    pub origin: String,
+    pub item_id: String,
+    pub item_name: String,
+    pub username: String,
+}
+
+enum SaveResult { Approved(String /* new item id */), Denied }
+enum UpdateResult { Approved, Denied }
+
+/// Carried by the pending-save table so the FE never sees the raw password.
+struct PendingSave {
+    tx: std::sync::mpsc::SyncSender<SaveResult>,
+    origin: String,
+    username: String,
+    password: String,
+    created_at: Instant,
+}
+
+struct PendingUpdate {
+    tx: std::sync::mpsc::SyncSender<UpdateResult>,
+    item_id: String,
+    new_password: String,
+    created_at: Instant,
 }
 
 struct Pending {
     pair: HashMap<String, (std::sync::mpsc::SyncSender<PairResult>, Instant)>,
     // value: (tx, candidates, created_at, token, origin)
     creds: HashMap<String, (std::sync::mpsc::SyncSender<CredsResult>, Vec<CredsCandidate>, Instant, String, String)>,
+    save: HashMap<String, PendingSave>,
+    update: HashMap<String, PendingUpdate>,
 }
 
 impl Pending {
@@ -84,12 +136,16 @@ impl Pending {
         Self {
             pair: HashMap::new(),
             creds: HashMap::new(),
+            save: HashMap::new(),
+            update: HashMap::new(),
         }
     }
     fn gc(&mut self) {
         let now = Instant::now();
         self.pair.retain(|_, (_, t)| now.duration_since(*t) < APPROVAL_TTL);
         self.creds.retain(|_, (_, _, t, _, _)| now.duration_since(*t) < APPROVAL_TTL);
+        self.save.retain(|_, ps| now.duration_since(ps.created_at) < APPROVAL_TTL);
+        self.update.retain(|_, pu| now.duration_since(pu.created_at) < APPROVAL_TTL);
     }
 }
 
@@ -99,7 +155,8 @@ pub struct BridgeState {
     running: AtomicBool,
     req_ctr: AtomicU64,
     last_associate: Mutex<Option<Instant>>,
-    associate_count_today: Mutex<u32>,
+    /// (yyyy-mm-dd UTC, count) — resets across calendar days so the cap is truly daily.
+    associate_count_today: Mutex<(String, u32)>,
 }
 
 impl Default for BridgeState {
@@ -110,7 +167,7 @@ impl Default for BridgeState {
             running: AtomicBool::new(false),
             req_ctr: AtomicU64::new(0),
             last_associate: Mutex::new(None),
-            associate_count_today: Mutex::new(0),
+            associate_count_today: Mutex::new((String::new(), 0)),
         }
     }
 }
@@ -130,7 +187,7 @@ impl BridgeState {
 
     pub fn forget_tokens(&self) {
         self.tokens.lock().unwrap().clear();
-        *self.associate_count_today.lock().unwrap() = 0;
+        *self.associate_count_today.lock().unwrap() = (String::new(), 0);
         *self.last_associate.lock().unwrap() = None;
     }
 
@@ -177,6 +234,51 @@ impl BridgeState {
         let _ = tx.send(result);
         Ok(())
     }
+
+    /// Resolve a pending save request. The closure receives (origin, username, password, name)
+    /// and returns Some(new_item_id) on success or None on failure.
+    pub fn complete_save(
+        &self,
+        id: &str,
+        allow: bool,
+        name: Option<String>,
+        on_save: impl FnOnce(&str, &str, &str, &str) -> Option<String>,
+    ) -> Result<(), String> {
+        let mut p = self.pending.lock().unwrap();
+        let ps = p.save.remove(id).ok_or("no such save request")?;
+        drop(p);
+        let result = if !allow {
+            SaveResult::Denied
+        } else {
+            let nm = name.unwrap_or_else(|| ps.origin.clone());
+            match on_save(&ps.origin, &ps.username, &ps.password, &nm) {
+                Some(item_id) => SaveResult::Approved(item_id),
+                None => SaveResult::Denied,
+            }
+        };
+        let _ = ps.tx.send(result);
+        Ok(())
+    }
+
+    /// Resolve a pending update request. The closure receives (item_id, new_password)
+    /// and returns true on success.
+    pub fn complete_update(
+        &self,
+        id: &str,
+        allow: bool,
+        on_update: impl FnOnce(&str, &str) -> bool,
+    ) -> Result<(), String> {
+        let mut p = self.pending.lock().unwrap();
+        let pu = p.update.remove(id).ok_or("no such update request")?;
+        drop(p);
+        let result = if allow && on_update(&pu.item_id, &pu.new_password) {
+            UpdateResult::Approved
+        } else {
+            UpdateResult::Denied
+        };
+        let _ = pu.tx.send(result);
+        Ok(())
+    }
 }
 
 /// Resolver abstracts away the vault lookup so bridge.rs has no direct VaultRepo coupling.
@@ -185,6 +287,12 @@ pub trait Resolver: Send + Sync + 'static {
     fn candidates_for(&self, origin_host: &str) -> Vec<CredsCandidate>;
     /// Resolve a specific item id → (username, password). Returns None if not a login.
     fn resolve(&self, item_id: &str) -> Option<ApprovedCred>;
+    /// Generate the current TOTP code for a login item. None if the item has no
+    /// totp_secret or is not a login.
+    fn totp_for(&self, item_id: &str) -> Option<TotpResp>;
+    /// Find a stored login that matches host + username exactly. Returns
+    /// (item_id, item_name) so we can decide save-vs-update on the FE.
+    fn find_by_host_user(&self, host: &str, username: &str) -> Option<(String, String)>;
 }
 
 /// Start the loopback HTTP server. Returns a handle that drops the thread on drop.
@@ -280,6 +388,11 @@ fn handle(
         (Method::Get, path) if path.starts_with("/v1/credentials") => {
             handle_credentials(&req, path, app, state, resolver)
         }
+        (Method::Get, path) if path.starts_with("/v1/totp") => {
+            handle_totp(&req, path, state, resolver)
+        }
+        (Method::Post, "/v1/save_request") => handle_save_request(&mut req, app, state, resolver),
+        (Method::Post, "/v1/update_request") => handle_update_request(&mut req, app, state, resolver),
         (Method::Get, "/v1/status") => json_response(200, &serde_json::json!({"ok": true})),
         _ => err(404, "not found"),
     };
@@ -297,18 +410,22 @@ fn handle_associate(
     // Rate-limit: max 1 request per ASSOCIATE_COOLDOWN_SECS, max 20/day.
     {
         let mut last = state.last_associate.lock().unwrap();
-        let mut count = state.associate_count_today.lock().unwrap();
+        let mut today = state.associate_count_today.lock().unwrap();
         let now = Instant::now();
         if let Some(t) = *last {
             if now.duration_since(t).as_secs() < ASSOCIATE_COOLDOWN_SECS {
                 return err(429, "too many requests");
             }
         }
-        if *count >= ASSOCIATE_DAILY_CAP {
+        let today_str = current_utc_date();
+        if today.0 != today_str {
+            *today = (today_str, 0);
+        }
+        if today.1 >= ASSOCIATE_DAILY_CAP {
             return err(429, "daily pairing limit reached");
         }
         *last = Some(now);
-        *count += 1;
+        today.1 += 1;
     }
 
     let mut buf = Vec::new();
@@ -392,8 +509,8 @@ fn handle_credentials(
     }
 
     // Dedup: reject if there's already a pending request from the same token+origin
-    // within the last 1.5 s to prevent stacking from rapid extension clicks.
-    const DEDUP_WINDOW: Duration = Duration::from_millis(1500);
+    // within the last 3 s to prevent stacking from rapid extension clicks.
+    const DEDUP_WINDOW: Duration = Duration::from_millis(3000);
     {
         let now = Instant::now();
         let pending = state.pending.lock().unwrap();
@@ -435,6 +552,213 @@ fn handle_credentials(
             err(408, "timeout")
         }
     }
+}
+
+/// GET /v1/totp?item_id=<uuid> — generate the current TOTP code for a stored login.
+/// Requires Bearer auth. No FE approval modal: caller already approved this item
+/// via the credentials flow on the same page; TOTP is the second leg of the same
+/// fill action. The TOTP secret itself never crosses the bridge.
+fn handle_totp(
+    req: &tiny_http::Request,
+    path: &str,
+    state: &BridgeState,
+    resolver: &dyn Resolver,
+) -> Response<std::io::Cursor<Vec<u8>>> {
+    let token = match bearer_token(req) {
+        Some(t) => t,
+        None => return err(401, "missing token"),
+    };
+    if !state.is_paired(&token) {
+        return err(401, "bad token");
+    }
+    let q = path.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let mut item_id = None;
+    for (k, v) in q.split('&').filter_map(|kv| kv.split_once('=')) {
+        if k == "item_id" {
+            item_id = Some(urldecode(v));
+        }
+    }
+    let id = match item_id {
+        Some(i) if !i.is_empty() => i,
+        _ => return err(400, "missing item_id"),
+    };
+    match resolver.totp_for(&id) {
+        Some(t) => json_response(200, &t),
+        None => err(404, "no totp"),
+    }
+}
+
+#[derive(Deserialize)]
+struct SaveBody {
+    origin: String,
+    username: String,
+    password: String,
+}
+
+#[derive(Serialize)]
+struct SaveResp {
+    item_id: String,
+}
+
+/// POST /v1/save_request — extension captured a submitted login and wants to save it.
+/// FE shows a modal with the host + username (never password). On Allow, IPC creates
+/// the new Login item and signals the bridge to reply 200 with the item id.
+fn handle_save_request(
+    req: &mut tiny_http::Request,
+    app: &AppHandle,
+    state: &BridgeState,
+    resolver: &dyn Resolver,
+) -> Response<std::io::Cursor<Vec<u8>>> {
+    let token = match bearer_token(req) {
+        Some(t) => t,
+        None => return err(401, "missing token"),
+    };
+    if !state.is_paired(&token) {
+        return err(401, "bad token");
+    }
+    let mut buf = Vec::new();
+    if req.as_reader().read_to_end(&mut buf).is_err() {
+        return err(400, "bad body");
+    }
+    let body: SaveBody = match serde_json::from_slice(&buf) {
+        Ok(b) => b,
+        Err(_) => return err(400, "bad json"),
+    };
+    if body.username.is_empty() || body.password.is_empty() || body.origin.is_empty() {
+        return err(400, "missing fields");
+    }
+    let host = match Url::parse(&body.origin).ok().and_then(|u| u.host_str().map(str::to_string)) {
+        Some(h) => h,
+        None => return err(400, "invalid origin"),
+    };
+
+    // If this host+username already exists, do not offer save — return 409 so the
+    // extension can route through update instead.
+    if let Some((existing_id, existing_name)) = resolver.find_by_host_user(&host, &body.username) {
+        #[derive(Serialize)]
+        struct Conflict { error: &'static str, item_id: String, item_name: String }
+        return json_response(409, &Conflict { error: "exists", item_id: existing_id, item_name: existing_name });
+    }
+
+    let id = state.new_id();
+    let (tx, rx) = std::sync::mpsc::sync_channel::<SaveResult>(1);
+    state.pending.lock().unwrap().save.insert(
+        id.clone(),
+        PendingSave {
+            tx,
+            origin: body.origin.clone(),
+            username: body.username.clone(),
+            password: body.password,
+            created_at: Instant::now(),
+        },
+    );
+    let payload = SaveRequest {
+        request_id: id.clone(),
+        origin: body.origin,
+        host,
+        username: body.username,
+    };
+    if app.emit("bridge:save_request", &payload).is_err() {
+        state.pending.lock().unwrap().save.remove(&id);
+        return err(503, "desktop app not ready");
+    }
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.unminimize();
+        let _ = win.set_focus();
+    }
+    match wait_oneshot(rx, APPROVAL_TTL) {
+        Some(SaveResult::Approved(item_id)) => json_response(200, &SaveResp { item_id }),
+        Some(SaveResult::Denied) => err(403, "denied"),
+        None => {
+            state.pending.lock().unwrap().save.remove(&id);
+            err(408, "timeout")
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct UpdateBody {
+    item_id: String,
+    new_password: String,
+}
+
+/// POST /v1/update_request — extension noticed a password mismatch on submit.
+/// FE shows a confirm modal naming the item. The new password lives in the
+/// pending table; the FE never sees it.
+fn handle_update_request(
+    req: &mut tiny_http::Request,
+    app: &AppHandle,
+    state: &BridgeState,
+    resolver: &dyn Resolver,
+) -> Response<std::io::Cursor<Vec<u8>>> {
+    let token = match bearer_token(req) {
+        Some(t) => t,
+        None => return err(401, "missing token"),
+    };
+    if !state.is_paired(&token) {
+        return err(401, "bad token");
+    }
+    let mut buf = Vec::new();
+    if req.as_reader().read_to_end(&mut buf).is_err() {
+        return err(400, "bad body");
+    }
+    let body: UpdateBody = match serde_json::from_slice(&buf) {
+        Ok(b) => b,
+        Err(_) => return err(400, "bad json"),
+    };
+    if body.item_id.is_empty() || body.new_password.is_empty() {
+        return err(400, "missing fields");
+    }
+
+    // Skip modal entirely if the password is already what's stored — no-op update.
+    if let Some(existing) = resolver.resolve(&body.item_id) {
+        if existing.password == body.new_password {
+            return json_response(200, &serde_json::json!({"ok": true, "noop": true}));
+        }
+    }
+
+    let id = state.new_id();
+    let (tx, rx) = std::sync::mpsc::sync_channel::<UpdateResult>(1);
+    state.pending.lock().unwrap().update.insert(
+        id.clone(),
+        PendingUpdate {
+            tx,
+            item_id: body.item_id.clone(),
+            new_password: body.new_password,
+            created_at: Instant::now(),
+        },
+    );
+
+    // We need item_name + username to render a meaningful modal. The FE looks
+    // them up from the vault using item_id on receipt.
+    let payload = UpdateRequest {
+        request_id: id.clone(),
+        origin: String::new(),
+        item_id: body.item_id,
+        item_name: String::new(),
+        username: String::new(),
+    };
+    if app.emit("bridge:update_request", &payload).is_err() {
+        state.pending.lock().unwrap().update.remove(&id);
+        return err(503, "desktop app not ready");
+    }
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.unminimize();
+        let _ = win.set_focus();
+    }
+    match wait_oneshot(rx, APPROVAL_TTL) {
+        Some(UpdateResult::Approved) => json_response(200, &serde_json::json!({"ok": true})),
+        Some(UpdateResult::Denied) => err(403, "denied"),
+        None => {
+            state.pending.lock().unwrap().update.remove(&id);
+            err(408, "timeout")
+        }
+    }
+}
+
+fn current_utc_date() -> String {
+    let ts = time::OffsetDateTime::now_utc();
+    format!("{:04}-{:02}-{:02}", ts.year(), u8::from(ts.month()), ts.day())
 }
 
 fn wait_oneshot<T>(rx: std::sync::mpsc::Receiver<T>, ttl: Duration) -> Option<T> {

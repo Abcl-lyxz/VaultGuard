@@ -100,6 +100,15 @@ export const api = {
     selectedItemId: string | null,
   ) =>
     invoke<void>("bridge_creds_complete", { id, allow, selectedItemId }),
+  bridgeSaveComplete: (
+    id: string,
+    allow: boolean,
+    name: string | null,
+    folderId: string | null = null,
+  ) =>
+    invoke<void>("bridge_save_complete", { id, allow, name, folderId }),
+  bridgeUpdateComplete: (id: string, allow: boolean) =>
+    invoke<void>("bridge_update_complete", { id, allow }),
 
   prefsGet: () => invoke<Prefs>("prefs_get"),
   prefsSet: (prefs: Prefs) => invoke<void>("prefs_set", { prefs }),
@@ -119,6 +128,21 @@ export type CredsRequest = {
   request_id: string;
   origin: string;
   candidates: CredsCandidate[];
+};
+
+export type SaveRequest = {
+  request_id: string;
+  origin: string;
+  host: string;
+  username: string;
+};
+
+export type UpdateRequest = {
+  request_id: string;
+  origin: string;
+  item_id: string;
+  item_name: string;
+  username: string;
 };
 
 export type ImportStrategy = "skip" | "overwrite" | "keep_both";

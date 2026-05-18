@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "VaultGuard Autofill",
-  "version": "0.3.0",
-  "description": "Autofill credentials from the local VaultGuard desktop app.",
+  "version": "0.5.0",
+  "description": "Autofill credentials, 2FA codes, and save/update logins via the local VaultGuard desktop app.",
   "minimum_chrome_version": "100",
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": ["http://127.0.0.1:62501/*", "<all_urls>"],

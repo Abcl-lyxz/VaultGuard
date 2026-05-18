@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.5.0] — 2026-05-18
+
+### Browser extension — major upgrade
+- **TOTP autofill**: after a successful credential fill, the extension detects a one-time-code field on the page (via `autocomplete=one-time-code`, `inputmode=numeric`, short `maxlength`, or `code/otp/2fa/token/verif/auth` hints) and fills the current code. The TOTP secret never leaves the desktop — the extension only receives the generated 6-digit code.
+- **Save-new-login prompt**: a capturing `submit` listener (with an Enter-key SPA fallback) snapshots the submitted username + password. If no matching login exists for the host, the desktop pops a "Save new login?" modal with an editable name field.
+- **Update-password prompt**: when the submitted credentials match a host+username already in the vault but the password differs, the desktop shows an "Update password?" confirmation. No-op updates (same password) are short-circuited at the bridge layer with no UI noise.
+- **Both flows are loopback + consent-gated**: passwords cross only `127.0.0.1:62501` over the existing pairing token; the desktop FE never sees raw passwords (they live in a pending-table inside `bridge.rs`).
+
+### Bridge — new endpoints
+- `GET /v1/totp?item_id=<uuid>` — returns `{code, remaining, period}`. Bearer-authed; no per-request modal (the user already approved this item via the credentials flow on the same page).
+- `POST /v1/save_request` body `{origin, username, password}` — emits `bridge:save_request`, modal-gated; replies 200 with the new item id or 409 with the existing item id if host+username already exists.
+- `POST /v1/update_request` body `{item_id, new_password}` — emits `bridge:update_request`, modal-gated; replies 200 immediately (no modal) if the new password equals the stored one.
+
+### Bug fixes & hardening
+- **Daily pair rate-limit reset**: `ASSOCIATE_DAILY_CAP` counter now resets on UTC date change instead of only on app restart (previously a multi-day session would never reset).
+- **Credentials dedup window**: bumped from 1.5 s → 3 s — covers slower networks and dual badge-click scenarios.
+- **`ApprovedCred` payload**: now carries `id` + `has_totp` so the content script can chain TOTP fill without an extra round-trip.
+
+### Versions
+- Desktop app `package.json`, `Cargo.toml`, `tauri.conf.json` → `0.5.0`.
+- Extension `manifest.json` → `0.5.0`.
+- New `npm run build:extension` packages `extension/` into `dist/vaultguard-extension-<version>.zip` (pure Node, no dependencies).
+
 ## [0.4.1] — 2026-05-03
 
 ### Bug fixes

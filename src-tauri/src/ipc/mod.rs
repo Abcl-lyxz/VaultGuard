@@ -15,7 +15,7 @@ use uuid::Uuid;
 use std::path::PathBuf as StdPathBuf;
 
 use crate::autofill;
-use crate::bridge::{self, ApprovedCred, BridgeState, CredsCandidate, Resolver};
+use crate::bridge::{self, ApprovedCred, BridgeState, CredsCandidate, Resolver, TotpResp};
 use crate::clipboard;
 use crate::crypto::DEFAULT_KDF;
 use crate::export::{export_to_file, import_from_file, ImportReport, ImportStrategy};
@@ -90,11 +90,51 @@ impl Resolver for VaultResolver {
         let s = state.lock().unwrap();
         let repo = s.repo.as_ref()?;
         let item = repo.get_item(&id).ok()??;
-        if let ItemPayload::Login { username, password, .. } = item.payload {
-            Some(ApprovedCred { username, password })
+        if let ItemPayload::Login { username, password, totp_secret, .. } = item.payload {
+            Some(ApprovedCred {
+                id: item.id.to_string(),
+                username,
+                password,
+                has_totp: totp_secret.as_deref().map(|s| !s.is_empty()).unwrap_or(false),
+            })
         } else {
             None
         }
+    }
+
+    fn totp_for(&self, item_id: &str) -> Option<TotpResp> {
+        let id = Uuid::parse_str(item_id).ok()?;
+        let state = self.app.state::<Mutex<AppState>>();
+        let s = state.lock().unwrap();
+        let repo = s.repo.as_ref()?;
+        let item = repo.get_item(&id).ok()??;
+        let secret = match item.payload {
+            ItemPayload::Login { totp_secret: Some(s), .. } if !s.is_empty() => s,
+            _ => return None,
+        };
+        let spec = TotpSpec { secret, algorithm: "SHA1".into(), digits: 6, period: 30 };
+        let snap = totp_snapshot(&spec).ok()?;
+        Some(TotpResp { code: snap.code, remaining: snap.remaining, period: snap.period })
+    }
+
+    fn find_by_host_user(&self, host: &str, username: &str) -> Option<(String, String)> {
+        let state = self.app.state::<Mutex<AppState>>();
+        let s = state.lock().unwrap();
+        let repo = s.repo.as_ref()?;
+        let summaries = repo.list_summaries().ok()?;
+        for sum in summaries {
+            if sum.kind != ItemKind::Login { continue; }
+            let Ok(Some(item)) = repo.get_item(&sum.id) else { continue };
+            if let ItemPayload::Login { username: u, url: Some(url_str), .. } = &item.payload {
+                if u != username { continue; }
+                let Ok(parsed) = url::Url::parse(url_str) else { continue };
+                let Some(saved_host) = parsed.host_str() else { continue };
+                if host_match(saved_host, host) {
+                    return Some((item.id.to_string(), item.name.clone()));
+                }
+            }
+        }
+        None
     }
 }
 
@@ -449,8 +489,13 @@ pub fn bridge_creds_complete(
     let resolve = |item_id: &str| -> Option<ApprovedCred> {
         let id = Uuid::parse_str(item_id).ok()?;
         let item = repo?.get_item(&id).ok()??;
-        if let ItemPayload::Login { username, password, .. } = item.payload {
-            Some(ApprovedCred { username, password })
+        if let ItemPayload::Login { username, password, totp_secret, .. } = item.payload {
+            Some(ApprovedCred {
+                id: item.id.to_string(),
+                username,
+                password,
+                has_totp: totp_secret.as_deref().map(|s| !s.is_empty()).unwrap_or(false),
+            })
         } else {
             None
         }
@@ -461,6 +506,72 @@ pub fn bridge_creds_complete(
             code: "bridge".into(),
             message: m,
         })
+}
+
+#[tauri::command]
+pub fn bridge_save_complete(
+    state: State<'_, Mutex<AppState>>,
+    id: String,
+    allow: bool,
+    name: Option<String>,
+    folder_id: Option<String>,
+) -> Result<(), CmdError> {
+    let s = state.lock().unwrap();
+    let bridge = s.bridge.clone();
+    let repo = s.repo.as_ref();
+    let folder_uuid = folder_id.as_deref().and_then(|f| Uuid::parse_str(f).ok());
+    let on_save = |origin: &str, username: &str, password: &str, nm: &str| -> Option<String> {
+        let r = repo?;
+        let ts = now_ts();
+        let id = Uuid::new_v4();
+        let item = Item {
+            id,
+            kind: ItemKind::Login,
+            name: nm.to_string(),
+            favorite: false,
+            folder_id: folder_uuid,
+            created_at: ts,
+            updated_at: ts,
+            payload: ItemPayload::Login {
+                username: username.to_string(),
+                password: password.to_string(),
+                url: Some(origin.to_string()),
+                notes: None,
+                totp_secret: None,
+            },
+        };
+        r.insert_item(&item).ok()?;
+        Some(id.to_string())
+    };
+    bridge
+        .complete_save(&id, allow, name, on_save)
+        .map_err(|m| CmdError { code: "bridge".into(), message: m })
+}
+
+#[tauri::command]
+pub fn bridge_update_complete(
+    state: State<'_, Mutex<AppState>>,
+    id: String,
+    allow: bool,
+) -> Result<(), CmdError> {
+    let s = state.lock().unwrap();
+    let bridge = s.bridge.clone();
+    let repo = s.repo.as_ref();
+    let on_update = |item_id: &str, new_password: &str| -> bool {
+        let Some(r) = repo else { return false };
+        let Ok(uuid) = Uuid::parse_str(item_id) else { return false };
+        let Ok(Some(mut item)) = r.get_item(&uuid) else { return false };
+        if let ItemPayload::Login { ref mut password, .. } = item.payload {
+            *password = new_password.to_string();
+        } else {
+            return false;
+        }
+        item.updated_at = now_ts();
+        r.update_item(&item).is_ok()
+    };
+    bridge
+        .complete_update(&id, allow, on_update)
+        .map_err(|m| CmdError { code: "bridge".into(), message: m })
 }
 
 #[tauri::command]
