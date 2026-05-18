@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.5.1] — 2026-05-18
+
+### Bug fixes
+- **Delete-item icon missing from header**: the only delete affordance lived in the editor footer and was easy to miss. Added a `Trash2` icon button in the `ItemEditor` header (next to the favourite star) that fires the existing `ConfirmDialog` flow. Visible only for existing items (`draft.id !== null`).
+- **White input fields on Login form** (Username + URL): `TextField` rendered `<input>` without a `type` attribute, so the default `text` type failed to match the CSS `input[type="text"]` selector and fell back to the browser's white default. Fixed at two layers: (a) `TextField` now emits `type="text"` (or the rule-provided type), and (b) `App.css` selector group also matches `input:not([type])` and `input[type="tel"]`.
+- **Create-item silent failure** (still reproduced by users on v0.5.0): error path in `save()` now toasts the failure (on top of the inline `.error` paragraph) and logs to console, so a hidden/overflowed inline message can no longer disguise the failure. `save()` also pre-validates with a per-kind required-field checker before invoking the IPC; failures render under each field with `aria-invalid` styling.
+
+### UX hardening — idiot-proof inputs
+- **Per-kind input constraints** on the create/edit form so bad data can't be typed in the first place:
+  - Card number → `inputMode="numeric"`, digit-strip transform, `maxLength=19`
+  - CVV → `inputMode="numeric"`, digit-strip, `maxLength=4`, pattern `\d{3,4}`
+  - Cardholder → `autoCapitalize="characters"` + uppercase transform
+  - Identity phone → `inputMode="tel"`, pattern `[\d+\-() ]*`, `maxLength=20`
+  - Identity email → `type="email"`, `inputMode="email"`, regex check on save
+  - Login URL → `type="url"`, auto-prepends `https://` on save if scheme omitted
+  - TOTP secret → uppercase + strip non-Base32 chars, length + alphabet validation (`A–Z 2–7 =`); save blocked when invalid
+  - Crypto seed phrase → BIP39 word-count hint (12/15/18/21/24)
+  - SSH private key → hint when missing `-----BEGIN` prefix
+- **Required-field indicators**: every per-kind required field shows a red `*` next to its label and is enforced by `validatePayloadInput()` before the Tauri IPC fires.
+- **Inline field errors**: failing fields render their error directly under the input with red text + `aria-invalid="true"` (red border + red focus ring).
+- **Create button disabled state**: now reflects the per-kind validation — no more clicking Create and wondering why nothing happens.
+- **Auto-focus on new item**: opening the "+ New" form puts focus on the *Item name* input immediately.
+- **Esc to cancel**: pressing `Escape` triggers the same dirty-state-aware cancel flow as the Cancel button.
+- **Payload normalization on save**: trims whitespace on text fields, uppercases cardholder + TOTP secret, strips non-digits from card number / CVV, and normalizes the URL — so the stored row is clean even if the user types loosely.
+
+### Version
+- Bumped to `0.5.1` in `package.json`, `Cargo.toml`, `tauri.conf.json`, and `extension/manifest.json`.
+
 ## [0.5.0] — 2026-05-18
 
 ### Browser extension — major upgrade

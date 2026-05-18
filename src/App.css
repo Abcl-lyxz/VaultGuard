@@ -165,7 +165,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .field-hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; }
 .field-hint-error { color: var(--danger); }
 
-input[type="text"], input[type="password"], input[type="email"], input[type="number"], input[type="url"], input[type="search"], select, textarea {
+input[type="text"], input[type="password"], input[type="email"], input[type="number"], input[type="url"], input[type="search"], input[type="tel"], input:not([type]), select, textarea {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--r);
@@ -176,11 +176,16 @@ input[type="text"], input[type="password"], input[type="email"], input[type="num
   width: 100%;
   transition: border-color var(--t-fast), box-shadow var(--t-fast);
 }
-input[type="text"]:focus, input[type="password"]:focus, input[type="email"]:focus, input[type="number"]:focus, input[type="url"]:focus, input[type="search"]:focus, select:focus, textarea:focus {
+input[type="text"]:focus, input[type="password"]:focus, input[type="email"]:focus, input[type="number"]:focus, input[type="url"]:focus, input[type="search"]:focus, input[type="tel"]:focus, input:not([type]):focus, select:focus, textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-muted);
   outline: none;
 }
+input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--danger); }
+input[aria-invalid="true"]:focus, textarea[aria-invalid="true"]:focus { box-shadow: 0 0 0 3px var(--danger-muted); border-color: var(--danger); }
+.field-required { color: var(--danger); font-weight: 700; }
+.danger-icon-btn:hover { color: var(--danger) !important; background: var(--danger-muted) !important; }
+.danger-icon-btn:focus-visible { outline-color: var(--danger); }
 input::placeholder, textarea::placeholder { color: var(--text-muted); }
 select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236e7681' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; cursor: pointer; }
 select option { background: var(--bg-elevated); color: var(--text-primary); }
