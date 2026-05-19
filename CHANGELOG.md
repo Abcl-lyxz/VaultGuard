@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.5.2] — 2026-05-19
+
+### Bug fixes
+- **Extension "Connection error" after pair → fill**: pairing tokens were held only in `BridgeState.tokens` in memory and were wiped every time the vault was locked (`bridge::stop()` → `forget_tokens()`). Combined with the bridge HTTP server being tied to vault unlock, the extension would silently drop out of paired state on every lock/unlock and on every app restart, leaving users stuck at "Connection error" with no idea why. Tokens now persist to a plaintext JSON file (`<app_data_dir>/bridge_tokens.json`, atomic write via tempfile + rename) and are rehydrated on every `bridge::start()`. The token alone cannot decrypt vault content — every data-returning endpoint still needs the vault unlocked — so persisting outside the vault is safe and gives the expected "pair once, stay paired" UX.
+- **Better extension error surfaces**: `authedFetch` in `extension/background.js` now distinguishes three failure modes and surfaces specific, actionable messages instead of the bare `Connection error`:
+  - **Not paired** → "Not paired — open the extension popup to pair with VaultGuard"
+  - **Bridge unreachable** (`TypeError: Failed to fetch`, vault locked or app closed) → "VaultGuard is locked or closed — unlock the desktop app and try again"
+  - **Token rejected (401)** → "Pairing was reset — open the extension popup to pair again" (also clears the stale token from `chrome.storage.local`)
+  Error responses now also carry a machine-readable `code` (`not_paired` / `bridge_down` / `token_rejected`).
+- **content.js fill flow**: no longer hides the real error behind a generic "Connection error" — relays the worker's message verbatim.
+
+### UI polish — micro-interactions (v0.5.2 animation pass)
+Goal: app feels responsive and crafted, but stays restrained enough not to distract. All animations respect `prefers-reduced-motion`.
+- **Easing tokens** added to `tokens.css`: `--ease-out`, `--ease-in-out`, `--ease-spring`.
+- **Button press feedback**: every `<button>` now scales to `0.97` on `:active`. Primary buttons lift slightly with a soft accent-colored glow on hover. Favourite-star and icon buttons use a spring curve.
+- **Modal stagger**: backdrop fades in fast (`120ms ease-out`), modal content springs in slightly slower (`200ms ease-spring`). Closing animates out (the modal no longer instant-disappears) — both backdrop and content fade/scale out for 120ms before unmount.
+- **Toast exit**: dismissing a toast now plays a 120ms slide-out + fade instead of vanishing instantly. State tracked via a new `closing?: boolean` flag on the Toast type.
+- **Editor panel fade**: the right pane is re-keyed on item id, so switching items plays a 200ms fade + 6px slide-up instead of hard-cutting.
+- **List row stagger**: items in the middle pane fade in with a left-slide and a capped 18ms-per-row stagger (max 12 rows) — feels natural on filter/search change, instant on long lists.
+- **Sidebar nav indicator bar**: active items grow a 2px accent-colored left border via `box-shadow inset` with a smooth `padding-left` slide. Icons gently scale up (`1.08`) on hover with a spring curve.
+- **TOTP code pulse**: the code button is keyed on the code itself, so each rotation plays a 500ms `transform: scale 1 → 1.05 → 1` pulse with a brief accent color flash.
+- **Accessibility**: `@media (prefers-reduced-motion: reduce)` clamps all animation/transition durations to `0.01ms` and disables `scroll-behavior: smooth`.
+
+### Files touched
+- Backend: `src-tauri/src/bridge.rs` (token persistence), `src-tauri/src/ipc/mod.rs` (`bridge_pair_complete` now persists on approve).
+- Extension: `extension/background.js`, `extension/content.js`.
+- Frontend styles: `src/styles/tokens.css`, `src/App.css`, `src/styles/components/layout.css`.
+- Frontend components: `src/components/ui/Modal.tsx`, `src/contexts/ToastContext.tsx`, `src/components/ui/Toast.tsx`, `src/components/ItemEditor.tsx`, `src/components/TotpBadge.tsx`, `src/components/layout/ItemListPanel.tsx`.
+
+### Version
+- Bumped to `0.5.2` in `package.json`, `Cargo.toml`, `tauri.conf.json`, and `extension/manifest.json`.
+
 ## [0.5.1] — 2026-05-18
 
 ### Bug fixes

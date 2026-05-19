@@ -428,13 +428,14 @@ window.__vgLoaded = true;
     try {
       resp = await chrome.runtime.sendMessage({ type: 'vg:fetch_creds', origin });
     } catch (e) {
-      showToast('Connection error');
+      showToast('VaultGuard: could not reach the extension worker');
       return;
     }
 
     if (!resp?.ok) {
-      badge.title = `VaultGuard: ${resp?.error || 'error'}`;
-      showToast(`VaultGuard: ${resp?.error || 'Connection error'}`);
+      const msg = resp?.error || 'unknown error';
+      badge.title = `VaultGuard: ${msg}`;
+      showToast(`VaultGuard: ${msg}`);
       return;
     }
 

@@ -13,7 +13,7 @@ export function ToastStack() {
   return (
     <div className="toast-stack" role="region" aria-label="Notifications" aria-live="polite">
       {toasts.map(t => (
-        <div key={t.id} className={`toast toast-${t.kind}`} role="status">
+        <div key={t.id} className={`toast toast-${t.kind}${t.closing ? " closing" : ""}`} role="status">
           <span className="toast-icon" aria-hidden="true">{ICONS[t.kind]}</span>
           <span className="toast-message">{t.message}</span>
           <button className="toast-close btn-icon" onClick={() => dismiss(t.id)} aria-label="Dismiss notification">

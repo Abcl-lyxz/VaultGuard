@@ -33,10 +33,27 @@ async function pair() {
 
 async function authedFetch(path, init = {}) {
   const token = await getToken();
-  if (!token) throw new Error('not paired');
+  if (!token) {
+    const e = new Error('Not paired — open the extension popup to pair with VaultGuard');
+    e.code = 'not_paired';
+    throw e;
+  }
   const headers = Object.assign({ Authorization: `Bearer ${token}` }, init.headers || {});
-  const r = await fetch(`${BRIDGE}${path}`, Object.assign({}, init, { headers }));
-  if (r.status === 401) { await clearToken(); throw new Error('token rejected — please pair again'); }
+  let r;
+  try {
+    r = await fetch(`${BRIDGE}${path}`, Object.assign({}, init, { headers }));
+  } catch (netErr) {
+    // TypeError: Failed to fetch — bridge HTTP server isn't listening.
+    const e = new Error('VaultGuard is locked or closed — unlock the desktop app and try again');
+    e.code = 'bridge_down';
+    throw e;
+  }
+  if (r.status === 401) {
+    await clearToken();
+    const e = new Error('Pairing was reset — open the extension popup to pair again');
+    e.code = 'token_rejected';
+    throw e;
+  }
   return r;
 }
 
@@ -136,7 +153,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: false, error: 'unknown message' });
       }
     } catch (e) {
-      sendResponse({ ok: false, error: String(e?.message || e) });
+      sendResponse({ ok: false, error: String(e?.message || e), code: e?.code });
     }
   })();
   return true; // async response

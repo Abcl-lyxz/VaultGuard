@@ -7,6 +7,7 @@ export interface Toast {
   message: string;
   kind: ToastKind;
   duration?: number;
+  closing?: boolean;
 }
 
 interface ToastContextValue {
@@ -21,14 +22,21 @@ const ToastContext = createContext<ToastContextValue>({
   dismiss: () => {},
 });
 
+const EXIT_MS = 120; // matches @keyframes toastOut
+
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const dismiss = useCallback((id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
-    const timer = timers.current.get(id);
-    if (timer) { clearTimeout(timer); timers.current.delete(id); }
+    const t = timers.current.get(id);
+    if (t) { clearTimeout(t); timers.current.delete(id); }
+    setToasts(prev => prev.map(x => x.id === id ? { ...x, closing: true } : x));
+    const t2 = setTimeout(() => {
+      setToasts(prev => prev.filter(x => x.id !== id));
+      timers.current.delete(id);
+    }, EXIT_MS);
+    timers.current.set(id, t2);
   }, []);
 
   const toast = useCallback((message: string, kind: ToastKind = "info", duration = 3500) => {

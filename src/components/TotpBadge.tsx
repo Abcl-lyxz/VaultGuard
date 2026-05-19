@@ -40,7 +40,8 @@ export function TotpBadge({ spec, onCopy }: Props) {
     <div className="totp">
       <button
         type="button"
-        className="totp-code"
+        key={snap.code}
+        className="totp-code pulse"
         title="Click to copy"
         onClick={() => onCopy?.(snap.code)}
       >

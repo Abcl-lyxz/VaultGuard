@@ -97,12 +97,13 @@ export function ItemListPanel({
             description="No items match this filter."
           />
         ) : (
-          items.map(item => (
+          items.map((item, idx) => (
             <ItemRow
               key={item.id}
               item={item}
               active={selected === item.id}
               onClick={() => onSelect(item.id)}
+              index={idx}
             />
           ))
         )}
@@ -112,18 +113,21 @@ export function ItemListPanel({
 }
 
 function ItemRow({
-  item, active, onClick,
+  item, active, onClick, index,
 }: {
   item: ItemSummary;
   active: boolean;
   onClick: () => void;
+  index: number;
 }) {
+  const delay = Math.min(index, 12) * 18; // cap stagger so long lists feel instant
   return (
     <div
       className={`item-row-v2${active ? " active" : ""}`}
       onClick={onClick}
       role="option"
       aria-selected={active}
+      style={{ animationDelay: `${delay}ms` }}
     >
       <ItemIcon item={item} />
       <div className="item-row-body">

@@ -20,6 +20,7 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -36,6 +37,37 @@ pub const BRIDGE_ADDR: &str = "127.0.0.1:62501";
 
 /// Per-request approval TTL — requests older than this are auto-denied.
 const APPROVAL_TTL: Duration = Duration::from_secs(30);
+
+/// Path of the persisted pair-token list.
+///
+/// Stored as plaintext JSON in the same app-data dir as `vault.db` and
+/// `prefs.json`. The token alone cannot decrypt vault content — every
+/// data-returning endpoint still needs a live `repo.lock()` which is only
+/// available while the vault is unlocked. Persisting outside the vault is
+/// what keeps the "pair once, stay paired" UX working across lock/unlock.
+fn tokens_file(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir.join("bridge_tokens.json"))
+}
+
+fn load_persisted_tokens(app: &AppHandle) -> Vec<String> {
+    let Ok(path) = tokens_file(app) else { return Vec::new() };
+    let Ok(data) = std::fs::read(&path) else { return Vec::new() };
+    serde_json::from_slice::<Vec<String>>(&data).unwrap_or_default()
+}
+
+fn persist_tokens(app: &AppHandle, tokens: &[String]) -> Result<(), String> {
+    let path = tokens_file(app)?;
+    let tmp = path.with_extension("json.tmp");
+    let data = serde_json::to_vec(tokens).map_err(|e| e.to_string())?;
+    std::fs::write(&tmp, &data).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    Ok(())
+}
 
 #[derive(Clone, Serialize)]
 pub struct PairRequest {
@@ -191,6 +223,25 @@ impl BridgeState {
         *self.last_associate.lock().unwrap() = None;
     }
 
+    /// Merge disk-persisted tokens into the in-memory list. Idempotent.
+    pub fn load_tokens(&self, app: &AppHandle) {
+        let persisted = load_persisted_tokens(app);
+        let mut guard = self.tokens.lock().unwrap();
+        for tok in persisted {
+            if !guard.iter().any(|t| t == &tok) {
+                guard.push(tok);
+            }
+        }
+    }
+
+    /// Snapshot the current in-memory tokens to disk. Best-effort.
+    pub fn save_tokens(&self, app: &AppHandle) {
+        let snapshot = self.tokens.lock().unwrap().clone();
+        if let Err(e) = persist_tokens(app, &snapshot) {
+            eprintln!("[bridge] persist_tokens failed: {e}");
+        }
+    }
+
     pub fn complete_pair(&self, id: &str, allow: bool) -> Result<(), String> {
         let mut p = self.pending.lock().unwrap();
         let (tx, _) = p.pair.remove(id).ok_or("no such pair request")?;
@@ -304,6 +355,9 @@ pub fn start<R: Resolver>(
     if state.running.swap(true, Ordering::SeqCst) {
         return Ok(()); // already running
     }
+    // Rehydrate paired tokens from disk so the extension stays paired across
+    // vault lock/unlock and app restart (v0.5.2).
+    state.load_tokens(&app);
     let addr: SocketAddr = BRIDGE_ADDR.parse().unwrap();
     let server = Server::http(addr).map_err(|e| e.to_string())?;
     let state_cl = state.clone();
@@ -324,7 +378,9 @@ pub fn start<R: Resolver>(
 
 pub fn stop(state: &BridgeState) {
     state.running.store(false, Ordering::SeqCst);
-    state.forget_tokens();
+    // Note: paired tokens deliberately NOT cleared here — they're persisted
+    // to disk and reloaded on next `start()`. Use `BridgeState::forget_tokens`
+    // explicitly (e.g. from a future "unpair-all" UI) to wipe.
     // Issuing a dummy request ensures the blocking `incoming_requests` iterator
     // wakes up and observes the running flag. Best-effort; ignore errors.
     let _ = std::net::TcpStream::connect_timeout(

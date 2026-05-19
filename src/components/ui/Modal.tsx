@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 interface ModalProps {
@@ -10,18 +10,32 @@ interface ModalProps {
   "aria-describedby"?: string;
 }
 
+const EXIT_MS = 120; // matches @keyframes backdropOut / modalOut
+
 export function Modal({ open, onClose, title, children, width = "420px", "aria-describedby": describedby }: ModalProps) {
   const titleId = useRef(`modal-title-${Math.random().toString(36).slice(2)}`).current;
   const prevFocus = useRef<HTMLElement | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(open);
+  const [closing, setClosing] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (open) {
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+      setMounted(true);
+      setClosing(false);
       prevFocus.current = document.activeElement as HTMLElement;
       requestAnimationFrame(() => panelRef.current?.focus());
-    } else {
-      prevFocus.current?.focus();
+    } else if (mounted) {
+      setClosing(true);
+      timerRef.current = setTimeout(() => {
+        setMounted(false);
+        setClosing(false);
+        prevFocus.current?.focus();
+      }, EXIT_MS);
     }
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [open]);
 
   useEffect(() => {
@@ -31,10 +45,10 @@ export function Modal({ open, onClose, title, children, width = "420px", "aria-d
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!mounted) return null;
 
   return createPortal(
-    <div className="modal-backdrop" onClick={onClose} style={{ animationDuration: "var(--t-fast)" }}>
+    <div className={"modal-backdrop" + (closing ? " closing" : "")} onClick={onClose}>
       <div
         ref={panelRef}
         className="modal"

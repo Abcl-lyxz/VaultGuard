@@ -465,6 +465,7 @@ pub fn vault_import(
 
 #[tauri::command]
 pub fn bridge_pair_complete(
+    app: AppHandle,
     state: State<'_, Mutex<AppState>>,
     id: String,
     allow: bool,
@@ -473,7 +474,11 @@ pub fn bridge_pair_complete(
     s.bridge.complete_pair(&id, allow).map_err(|m| CmdError {
         code: "bridge".into(),
         message: m,
-    })
+    })?;
+    if allow {
+        s.bridge.save_tokens(&app);
+    }
+    Ok(())
 }
 
 #[tauri::command]

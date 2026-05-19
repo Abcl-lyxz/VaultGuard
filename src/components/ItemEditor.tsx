@@ -192,7 +192,7 @@ export function ItemEditor({ itemId, folders, onSaved, onDeleted, onCancel }: Pr
   }
 
   return (
-    <div className="editor">
+    <div className="editor" key={draft.id ?? "new"}>
       <div className="editor-head">
         <input
           ref={nameInputRef}
